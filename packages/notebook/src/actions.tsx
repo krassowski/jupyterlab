@@ -1315,6 +1315,38 @@ export namespace NotebookActions {
   }
 
   /**
+   * Render side-by-side.
+   *
+   * @param notebook - The target notebook widget.
+   */
+  export function renderSideBySide(notebook: Notebook): void {
+    console.log("render side by side");
+
+    const nodes = document.getElementsByClassName('jp-CodeCell');
+    for(let i = 0; i < nodes.length; i++){
+      const ele = nodes.item(i) as HTMLElement;
+      ele.style.display = 'flex';
+      ele.style.alignItems = 'flex-start';
+      ele.style.flexWrap = 'wrap';
+      ele.style.direction = 'row';
+    }
+  }
+
+  /**
+   * Render not side-by-side.
+   *
+   * @param notebook - The target notebook widget.
+   */
+  export function renderNotSideBySide(notebook: Notebook): void {
+    console.log("render not side by side");
+    const nodes = document.getElementsByClassName('jp-CodeCell');
+    console.log(nodes);
+    for(let i = 0; i < nodes.length; i++){
+      (nodes.item(i) as HTMLElement).style.display = 'block';
+    }
+  }
+
+  /**
    * Show the output on all code cells.
    *
    * @param notebook - The target notebook widget.
