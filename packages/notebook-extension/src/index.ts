@@ -2145,7 +2145,7 @@ function addCommands(
       const current = getCurrent(tracker, shell, args);
 
       if (current) {
-        return NotebookActions.renderSideBySide(current.content);
+        return NotebookActions.renderSideBySide();
       }
     },
     isEnabled
@@ -2156,7 +2156,7 @@ function addCommands(
       const current = getCurrent(tracker, shell, args);
 
       if (current) {
-        return NotebookActions.renderNotSideBySide(current.content);
+        return NotebookActions.renderNotSideBySide();
       }
     },
     isEnabled

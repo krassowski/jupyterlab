@@ -1319,9 +1319,7 @@ export namespace NotebookActions {
    *
    * @param notebook - The target notebook widget.
    */
-  export function renderSideBySide(notebook: Notebook): void {
-    console.log("render side by side");
-
+  export function renderSideBySide(): void {
     const nodes = document.getElementsByClassName('jp-CodeCell');
     for(let i = 0; i < nodes.length; i++){
       const ele = nodes.item(i) as HTMLElement;
@@ -1337,10 +1335,8 @@ export namespace NotebookActions {
    *
    * @param notebook - The target notebook widget.
    */
-  export function renderNotSideBySide(notebook: Notebook): void {
-    console.log("render not side by side");
+  export function renderNotSideBySide(): void {
     const nodes = document.getElementsByClassName('jp-CodeCell');
-    console.log(nodes);
     for(let i = 0; i < nodes.length; i++){
       (nodes.item(i) as HTMLElement).style.display = 'block';
     }
