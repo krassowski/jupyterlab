@@ -2145,7 +2145,7 @@ function addCommands(
       const current = getCurrent(tracker, shell, args);
 
       if (current) {
-        return NotebookActions.renderSideBySide();
+        return NotebookActions.renderSideBySide(current);
       }
     },
     isEnabled

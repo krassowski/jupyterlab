@@ -26,6 +26,7 @@ import { ElementExt } from '@lumino/domutils';
 import { ISignal, Signal } from '@lumino/signaling';
 import * as React from 'react';
 import { INotebookModel } from './model';
+import { NotebookPanel } from './panel';
 import { Notebook } from './widget';
 
 /**
@@ -1317,9 +1318,10 @@ export namespace NotebookActions {
   /**
    * Render side-by-side.
    *
-   * @param notebook - The target notebook widget.
+   * @param panel - The current notebook panel.
    */
-  export function renderSideBySide(): void {
+  export function renderSideBySide(panel: NotebookPanel): void {
+    const halfWidth = panel.node.clientWidth / 2;
     const nodes = document.getElementsByClassName('jp-CodeCell');
     for(let i = 0; i < nodes.length; i++){
       const ele = nodes.item(i) as HTMLElement;
@@ -1328,12 +1330,21 @@ export namespace NotebookActions {
       ele.style.flexWrap = 'wrap';
       ele.style.direction = 'row';
     }
+    const inputarea = document.getElementsByClassName('jp-InputArea');
+    for(let j = 0; j < inputarea.length; j++){
+      const area = inputarea.item(j) as HTMLElement;
+      area.style.minWidth = `calc(${halfWidth}px)`;
+      area.style.maxWidth = `calc(${halfWidth}px)`;
+    }
+    const outputarea = document.getElementsByClassName('jp-OutputArea');
+    for(let k = 0; k < inputarea.length; k++){
+      (outputarea.item(k) as HTMLElement).style.maxWidth = `calc(${halfWidth}px - 10px)`;
+    }
   }
 
   /**
    * Render not side-by-side.
    *
-   * @param notebook - The target notebook widget.
    */
   export function renderNotSideBySide(): void {
     const nodes = document.getElementsByClassName('jp-CodeCell');
