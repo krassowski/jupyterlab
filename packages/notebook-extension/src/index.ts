@@ -2146,7 +2146,6 @@ function addCommands(
     label: trans.__('Render Side-by-side'),
     execute: args => {
       const current = getCurrent(tracker, shell, args);
-      Private.renderSideBySide = true;
       if (current) {
         if (!(app instanceof JupyterLab)) {
           return NotebookActions.renderSideBySide(current);
@@ -2160,7 +2159,6 @@ function addCommands(
     label: trans.__('Render Not Side-by-side'),
     execute: args => {
       const current = getCurrent(tracker, shell, args);
-      Private.renderSideBySide = false;
       if (current) {
         return NotebookActions.renderNotSideBySide();
       }
@@ -2701,5 +2699,4 @@ namespace Private {
       translator?: ITranslator;
     }
   }
-  export var renderSideBySide = false;
 }
