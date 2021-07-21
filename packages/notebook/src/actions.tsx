@@ -1350,7 +1350,7 @@ export namespace NotebookActions {
       for (let k = 0; k < outputarea.length; k++) {
         (outputarea.item(
           k
-        ) as HTMLElement).style.maxWidth = `calc(${halfWidth}px - 30px)`;
+        ) as HTMLElement).style.maxWidth = `calc(${halfWidth}px - 50px)`;
       }
     };
     applySideBySide();
