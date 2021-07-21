@@ -17,6 +17,7 @@ import {
   isRawCellModel,
   MarkdownCell
 } from '@jupyterlab/cells';
+import { JupyterLab } from '@jupyterlab/application';
 import * as nbformat from '@jupyterlab/nbformat';
 import { KernelMessage } from '@jupyterlab/services';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
@@ -1320,11 +1321,19 @@ export namespace NotebookActions {
    *
    * @param panel - The current notebook panel.
    */
-  export function renderSideBySide(panel: NotebookPanel): void {
+  export function renderSideBySide(
+    panel: NotebookPanel,
+    app?: JupyterLab
+  ): void {
+    Private.sideBySide = true;
     const applySideBySide = () => {
+      if (!Private.sideBySide) {
+        return;
+      }
+
       const halfWidth = panel.node.clientWidth / 2;
       const nodes = document.getElementsByClassName('jp-CodeCell');
-      for(let i = 0; i < nodes.length; i++){
+      for (let i = 0; i < nodes.length; i++) {
         const ele = nodes.item(i) as HTMLElement;
         ele.style.display = 'flex';
         ele.style.alignItems = 'flex-start';
@@ -1332,17 +1341,28 @@ export namespace NotebookActions {
         ele.style.direction = 'row';
       }
       const inputarea = document.getElementsByClassName('jp-InputArea-editor');
-      for(let j = 0; j < inputarea.length; j++){
+      for (let j = 0; j < inputarea.length; j++) {
         const area = inputarea.item(j) as HTMLElement;
         area.style.minWidth = `calc(${halfWidth}px - 30px)`;
         area.style.maxWidth = `calc(${halfWidth}px - 30px)`;
       }
       const outputarea = document.getElementsByClassName('jp-OutputArea');
-      for(let k = 0; k < outputarea.length; k++){
-        (outputarea.item(k) as HTMLElement).style.maxWidth = `calc(${halfWidth}px - 30px)`;
+      for (let k = 0; k < outputarea.length; k++) {
+        (outputarea.item(
+          k
+        ) as HTMLElement).style.maxWidth = `calc(${halfWidth}px - 30px)`;
       }
     };
     applySideBySide();
+
+    panel.content.activeCellChanged.connect(() => {
+      applySideBySide();
+    });
+    if (app) {
+      app.shell.layoutModified.connect(() => {
+        applySideBySide();
+      });
+    }
   }
 
   /**
@@ -1350,20 +1370,21 @@ export namespace NotebookActions {
    *
    */
   export function renderNotSideBySide(): void {
+    Private.sideBySide = false;
     const removeSideBySide = () => {
       const nodes = document.getElementsByClassName('jp-CodeCell');
-      for(let i = 0; i < nodes.length; i++){
+      for (let i = 0; i < nodes.length; i++) {
         const ele = nodes.item(i) as HTMLElement;
         ele.style.display = 'initial';
       }
       const inputarea = document.getElementsByClassName('jp-InputArea-editor');
-      for(let j = 0; j < inputarea.length; j++){
+      for (let j = 0; j < inputarea.length; j++) {
         const area = inputarea.item(j) as HTMLElement;
         area.style.minWidth = 'initial';
         area.style.maxWidth = 'initial';
       }
       const outputarea = document.getElementsByClassName('jp-OutputArea');
-      for(let k = 0; k < outputarea.length; k++){
+      for (let k = 0; k < outputarea.length; k++) {
         (outputarea.item(k) as HTMLElement).style.maxWidth = 'initial';
       }
     };
@@ -2309,4 +2330,6 @@ namespace Private {
     }
     cell.value.text = newHeader + source;
   }
+
+  export var sideBySide = false;
 }

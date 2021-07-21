@@ -7,6 +7,7 @@
 
 import {
   ILayoutRestorer,
+  JupyterLab,
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
@@ -2143,9 +2144,12 @@ function addCommands(
     label: trans.__('Render Side-by-side'),
     execute: args => {
       const current = getCurrent(tracker, shell, args);
-
+      Private.renderSideBySide = true;
       if (current) {
-        return NotebookActions.renderSideBySide(current);
+        if (!(app instanceof JupyterLab)) {
+          return NotebookActions.renderSideBySide(current);
+        }
+        return NotebookActions.renderSideBySide(current, app);
       }
     },
     isEnabled
@@ -2154,7 +2158,7 @@ function addCommands(
     label: trans.__('Render Not Side-by-side'),
     execute: args => {
       const current = getCurrent(tracker, shell, args);
-
+      Private.renderSideBySide = false;
       if (current) {
         return NotebookActions.renderNotSideBySide();
       }
@@ -2695,4 +2699,5 @@ namespace Private {
       translator?: ITranslator;
     }
   }
+  export var renderSideBySide = false;
 }
