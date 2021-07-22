@@ -14,6 +14,7 @@ import {
 import {
   Dialog,
   ICommandPalette,
+  InputDialog,
   ISessionContextDialogs,
   MainAreaWidget,
   sessionContextDialogs,
@@ -241,6 +242,8 @@ namespace CommandIDs {
   export const renderSideBySide = 'notebook:render-side-by-side';
 
   export const renderNotSideBySide = 'notebook:render-not-side-by-side';
+
+  export const setSideBySideRatio = 'notebook:set-side-by-side-ratio';
 
   export const enableOutputScrolling = 'notebook:enable-output-scrolling';
 
@@ -2161,6 +2164,24 @@ function addCommands(
     },
     isEnabled
   });
+  commands.addCommand(CommandIDs.setSideBySideRatio, {
+    label: trans.__('Set side-by-side ratio'),
+    execute: args => {
+      InputDialog.getNumber({
+        title: trans.__('Width of the output in side-by-side mode'),
+        value: 1
+      })
+        .then(result => {
+          if (result.value) {
+            document.documentElement.style.setProperty(
+              '--jp-side-by-side-input-size',
+              `${result.value}fr`
+            );
+          }
+        })
+        .catch(console.error);
+    }
+  });
   commands.addCommand(CommandIDs.showAllOutputs, {
     label: trans.__('Expand All Outputs'),
     execute: args => {
@@ -2337,6 +2358,7 @@ function populatePalette(
     CommandIDs.hideAllOutputs,
     CommandIDs.showAllOutputs,
     CommandIDs.renderSideBySide,
+    CommandIDs.setSideBySideRatio,
     CommandIDs.enableOutputScrolling,
     CommandIDs.disableOutputScrolling
   ].forEach(command => {

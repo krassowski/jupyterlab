@@ -297,11 +297,18 @@
 /*-----------------------------------------------------------------------------
 | Side-by-side Mode (.jp-mod-sideBySide)
 |----------------------------------------------------------------------------*/
+:root {
+  --jp-side-by-side-input-size: 1fr;
+}
+
 .jp-mod-sideBySide.jp-Notebook .jp-CodeCell {
   display: grid;
   column-gap: var(--jp-cell-padding);
   /* in side-by-side mode there are three rows: header, cell (input and output), footer */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--jp-side-by-side-input-size)
+    );
   /* in side-by-side mode there are two columns: input and output; header and footer span both of the columns */
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
