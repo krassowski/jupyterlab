@@ -2174,7 +2174,7 @@ function addCommands(
         .then(result => {
           if (result.value) {
             document.documentElement.style.setProperty(
-              '--jp-side-by-side-input-size',
+              '--jp-side-by-side-output-size',
               `${result.value}fr`
             );
           }
