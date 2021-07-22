@@ -295,6 +295,58 @@
 }
 
 /*-----------------------------------------------------------------------------
+| Side-by-side Mode (.jp-mod-sideBySide)
+|----------------------------------------------------------------------------*/
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell {
+  display: grid;
+  column-gap: var(--jp-cell-padding);
+  /* in side-by-side mode there are three rows: header, cell (input and output), footer */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* in side-by-side mode there are two columns: input and output; header and footer span both of the columns */
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'header header'
+    'input output'
+    'footer footer';
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellHeader {
+  grid-area: header;
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-Cell-inputWrapper {
+  grid-area: input;
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-Cell-outputWrapper {
+  grid-area: output;
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellFooter {
+  grid-area: footer;
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellResizeHandle {
+  display: block;
+  flex: 0 0 5px;
+  margin-left: 5px;
+  width: 5px;
+  height: 100%;
+  background: var(--jp-border-color2);
+  cursor: ew-resize;
+}
+
+.jp-mod-sideBySide.jp-Notebook
+  .jp-CodeCell.jp-mod-resizedCell
+  .jp-CellResizeHandle {
+  background: var(--jp-border-color0);
+}
+
+.jp-CellResizeHandle {
+  display: none;
+}
+
+/*-----------------------------------------------------------------------------
 | Placeholder
 |----------------------------------------------------------------------------*/
 

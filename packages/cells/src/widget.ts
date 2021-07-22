@@ -73,6 +73,9 @@ import {
 } from './model';
 
 import { InputPlaceholder, OutputPlaceholder } from './placeholder';
+
+import { ResizeHandle } from './resizeHandle';
+
 import { Signal } from '@lumino/signaling';
 import { addIcon } from '@jupyterlab/ui-components';
 
@@ -217,6 +220,7 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
     input.addClass(CELL_INPUT_AREA_CLASS);
     inputWrapper.addWidget(inputCollapser);
     inputWrapper.addWidget(input);
+    inputWrapper.addWidget(new ResizeHandle(this.node));
     (this.layout as PanelLayout).addWidget(inputWrapper);
 
     this._inputPlaceholder = new InputPlaceholder(() => {

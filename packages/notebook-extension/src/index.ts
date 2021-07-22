@@ -7,7 +7,6 @@
 
 import {
   ILayoutRestorer,
-  JupyterLab,
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
@@ -2147,10 +2146,7 @@ function addCommands(
     execute: args => {
       const current = getCurrent(tracker, shell, args);
       if (current) {
-        if (!(app instanceof JupyterLab)) {
-          return NotebookActions.renderSideBySide(current);
-        }
-        return NotebookActions.renderSideBySide(current, app);
+        return NotebookActions.renderSideBySide(current.content);
       }
     },
     isEnabled
@@ -2160,7 +2156,7 @@ function addCommands(
     execute: args => {
       const current = getCurrent(tracker, shell, args);
       if (current) {
-        return NotebookActions.renderNotSideBySide();
+        return NotebookActions.renderNotSideBySide(current.content);
       }
     },
     isEnabled
