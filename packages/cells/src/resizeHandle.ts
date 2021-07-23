@@ -5,9 +5,13 @@ const RESIZE_HANDLE_CLASS = 'jp-CellResizeHandle';
 
 const CELL_RESIZED_CLASS = 'jp-mod-resizedCell';
 
+/**
+ * A handle that allows to change input/output proportions in side-by-side mode.
+ */
 export class ResizeHandle extends Widget {
   private _isActive: boolean = false;
   private _isDragging: boolean = false;
+  private _mouseOffset: number;
 
   constructor(protected targetNode: HTMLElement) {
     super();
@@ -40,6 +44,8 @@ export class ResizeHandle extends Widget {
         this._isActive = false;
         break;
       case 'mousedown':
+        this._mouseOffset =
+          (event as MouseEvent).clientX - this.node.getBoundingClientRect().x;
         this._isDragging = true;
         if (!this._isActive) {
           this.targetNode.classList.add(CELL_RESIZED_CLASS);
@@ -54,8 +60,9 @@ export class ResizeHandle extends Widget {
         }
         this.targetNode.style.gridTemplateColumns =
           (event as MouseEvent).clientX -
-          this.targetNode.getBoundingClientRect().x +
-          'px 1fr';
+          this.targetNode.getBoundingClientRect().x -
+          this._mouseOffset +
+          'px min-content 1fr';
         break;
       case 'mouseup':
         this._isDragging = false;

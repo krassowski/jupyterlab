@@ -220,7 +220,6 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
     input.addClass(CELL_INPUT_AREA_CLASS);
     inputWrapper.addWidget(inputCollapser);
     inputWrapper.addWidget(input);
-    inputWrapper.addWidget(new ResizeHandle(this.node));
     (this.layout as PanelLayout).addWidget(inputWrapper);
 
     this._inputPlaceholder = new InputPlaceholder(() => {
@@ -748,7 +747,8 @@ export class CodeCell extends Cell<ICodeCellModel> {
       output.outputLengthChanged.connect(this._outputLengthHandler, this);
       outputWrapper.addWidget(outputCollapser);
       outputWrapper.addWidget(output);
-      (this.layout as PanelLayout).insertWidget(2, outputWrapper);
+      (this.layout as PanelLayout).insertWidget(2, new ResizeHandle(this.node));
+      (this.layout as PanelLayout).insertWidget(3, outputWrapper);
 
       if (model.isDirty) {
         this.addClass(DIRTY_CLASS);

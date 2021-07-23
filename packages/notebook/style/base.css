@@ -303,18 +303,15 @@
 
 .jp-mod-sideBySide.jp-Notebook .jp-CodeCell {
   display: grid;
-  column-gap: var(--jp-cell-padding);
-  /* in side-by-side mode there are three rows: header, cell (input and output), footer */
-  grid-template-columns: minmax(0, 1fr) minmax(
+  grid-template-columns: minmax(0, 1fr) min-content minmax(
       0,
       var(--jp-side-by-side-output-size)
     );
-  /* in side-by-side mode there are two columns: input and output; header and footer span both of the columns */
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    'header header'
-    'input output'
-    'footer footer';
+    'header header header'
+    'input handle output'
+    'footer footer footer';
 }
 
 .jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellHeader {
@@ -326,6 +323,8 @@
 }
 
 .jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-Cell-outputWrapper {
+  /* overwrite the default margin (no vertical separation needed in side by side move */
+  margin-top: 0;
   grid-area: output;
 }
 
@@ -334,18 +333,25 @@
 }
 
 .jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellResizeHandle {
+  grid-area: handle;
+  user-select: none;
   display: block;
-  flex: 0 0 5px;
-  margin-left: 5px;
-  width: 5px;
   height: 100%;
-  background: var(--jp-border-color2);
   cursor: ew-resize;
+  padding: 0 var(--jp-cell-padding);
+}
+
+.jp-mod-sideBySide.jp-Notebook .jp-CodeCell .jp-CellResizeHandle::after {
+  content: '';
+  display: block;
+  background: var(--jp-border-color2);
+  height: 100%;
+  width: 5px;
 }
 
 .jp-mod-sideBySide.jp-Notebook
   .jp-CodeCell.jp-mod-resizedCell
-  .jp-CellResizeHandle {
+  .jp-CellResizeHandle::after {
   background: var(--jp-border-color0);
 }
 
