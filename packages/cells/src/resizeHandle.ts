@@ -12,6 +12,7 @@ export class ResizeHandle extends Widget {
   private _isActive: boolean = false;
   private _isDragging: boolean = false;
   private _mouseOffset: number;
+  private _protectedWidth = 10;
 
   constructor(protected targetNode: HTMLElement) {
     super();
@@ -54,16 +55,20 @@ export class ResizeHandle extends Widget {
         window.addEventListener('mousemove', this);
         window.addEventListener('mouseup', this);
         break;
-      case 'mousemove':
+      case 'mousemove': {
         if (!this._isActive || !this._isDragging) {
           return;
         }
+        const targetRect = this.targetNode.getBoundingClientRect();
+        const inputWidth =
+          (event as MouseEvent).clientX - targetRect.x - this._mouseOffset;
         this.targetNode.style.gridTemplateColumns =
-          (event as MouseEvent).clientX -
-          this.targetNode.getBoundingClientRect().x -
-          this._mouseOffset +
-          'px min-content 1fr';
+          Math.min(
+            Math.max(inputWidth, this._protectedWidth),
+            targetRect.width - this._protectedWidth
+          ) + 'px min-content 1fr';
         break;
+      }
       case 'mouseup':
         this._isDragging = false;
         window.removeEventListener('mousemove', this);
