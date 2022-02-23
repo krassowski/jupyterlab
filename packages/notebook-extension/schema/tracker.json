@@ -889,6 +889,7 @@
     "kernelStatus": {
       "title": "Kernel status icon configuration",
       "description": "Defines the position and components of execution progress indicator.",
+      "type": "object",
       "$ref": "#/definitions/kernelStatusConfig",
       "default": {
         "showOnStatusBar": false,
