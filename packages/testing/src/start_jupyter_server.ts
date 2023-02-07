@@ -58,7 +58,7 @@ export class JupyterServer {
       JUPYTER_RUNTIME_DIR: Private.mktempDir('jupyter_runtime'),
       IPYTHONDIR: Private.mktempDir('ipython'),
       PATH: process.env.PATH,
-      PYDEVD_USE_FRAME_EVAL: 'YES'
+      DEBUGPY_LOG_DIR: options.debugPath
     };
 
     // Create the child process for the server.
@@ -68,7 +68,7 @@ export class JupyterServer {
 
     // Handle server output.
     const handleOutput = (output: string) => {
-      console.debug(output);
+      //console.debug(output);
 
       if (started) {
         return;
@@ -142,6 +142,7 @@ export namespace JupyterServer {
      * Map of additional kernelspec names to kernel.json dictionaries
      */
     additionalKernelSpecs: JSONObject;
+    debugPath?: string;
   }
 }
 

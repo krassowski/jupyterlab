@@ -15,45 +15,7 @@ jobs:
       matrix:
         group:
           [
-            js-application,
-            js-apputils,
-            js-cell-toolbar,
-            js-cells,
-            js-codeeditor,
-            js-codemirror,
-            js-completer,
-            js-console,
-            js-coreutils,
-            js-csvviewer,
             js-debugger,
-            js-docmanager,
-            js-docprovider,
-            js-docregistry,
-            js-documentsearch,
-            js-filebrowser,
-            js-fileeditor,
-            js-imageviewer,
-            js-inspector,
-            js-logconsole,
-            js-lsp,
-            js-mainmenu,
-            js-metadataform,
-            js-metapackage,
-            js-nbformat,
-            js-notebook,
-            js-observables,
-            js-outputarea,
-            js-rendermime,
-            js-services,
-            js-settingregistry,
-            js-statedb,
-            js-statusbar,
-            js-testing,
-            js-terminal,
-            js-toc,
-            js-translation,
-            js-ui-components,
-            js-vega5-extension,
           ]
       fail-fast: false
     runs-on: ubuntu-20.04
@@ -71,8 +33,23 @@ jobs:
         run: |
           bash ./scripts/ci_install.sh
 
+      - name: Create logs dir
+        run: mkdir -p logs
+
+      - name: Where am I?
+        run: cwd
+
       - name: Run test ${{ matrix.group }}
         env:
           GROUP: ${{ matrix.group }}
         run: |
           bash ./scripts/ci_script.sh
+
+      - name: What's in there?
+        run: ls
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: logs
+          path: logs/
