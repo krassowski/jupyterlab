@@ -37,7 +37,7 @@ jobs:
         run: mkdir -p logs
 
       - name: Where am I?
-        run: cwd
+        run: pwd
 
       - name: Run test ${{ matrix.group }}
         env:
