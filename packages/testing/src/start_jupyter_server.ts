@@ -57,7 +57,8 @@ export class JupyterServer {
       JUPYTER_DATA_DIR: Private.handleData(options),
       JUPYTER_RUNTIME_DIR: Private.mktempDir('jupyter_runtime'),
       IPYTHONDIR: Private.mktempDir('ipython'),
-      PATH: process.env.PATH
+      PATH: process.env.PATH,
+      PYDEVD_USE_FRAME_EVAL: 'YES'
     };
 
     // Create the child process for the server.
