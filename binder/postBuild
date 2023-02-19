@@ -3,4 +3,4 @@
 # Distributed under the terms of the Modified BSD License.
 set -euo pipefail
 
-pip install -e .[dev]
+#pip install -e .[dev]
