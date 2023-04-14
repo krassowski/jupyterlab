@@ -38,7 +38,7 @@ jobs:
           # Build dev-mode
           jlpm run build
 
-      - uses: jupyterlab/maintainer-tools/.github/actions/update-snapshots@v1
+      - uses: krassowski/maintainer-tools/.github/actions/update-snapshots@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           server_url: http-get://localhost:8888/lab
