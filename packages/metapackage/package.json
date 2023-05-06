@@ -15,6 +15,7 @@
   "sideEffects": false,
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "style": "style/index.css",
   "directories": {
     "lib": "lib/"
   },
@@ -22,7 +23,9 @@
     "lib/*.d.ts",
     "lib/*.js.map",
     "lib/*.js",
-    "src/**/*.{ts,tsx}"
+    "src/**/*.{ts,tsx}",
+    "style/index.css",
+    "style/index.js"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -100,6 +103,8 @@
     "@jupyterlab/observables": "^5.0.0-rc.1",
     "@jupyterlab/outputarea": "^4.0.0-rc.1",
     "@jupyterlab/pdf-extension": "^4.0.0-rc.1",
+    "@jupyterlab/pluginmanager": "^4.0.0-rc.1",
+    "@jupyterlab/pluginmanager-extension": "^4.0.0-rc.1",
     "@jupyterlab/property-inspector": "^4.0.0-rc.1",
     "@jupyterlab/rendermime": "^4.0.0-rc.1",
     "@jupyterlab/rendermime-extension": "^4.0.0-rc.1",
@@ -140,5 +145,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "styleModule": "style/index.js"
 }

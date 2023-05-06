@@ -86,6 +86,8 @@ export async function main() {
     }
   });
 
+  const allPlugins = [];
+
   /**
    * Iterate over active plugins in an extension.
    *
@@ -104,7 +106,17 @@ export async function main() {
 
     let plugins = Array.isArray(exports) ? exports : [exports];
     for (let plugin of plugins) {
-      if (PageConfig.Extension.isDisabled(plugin.id)) {
+      const isDisabled = PageConfig.Extension.isDisabled(plugin.id);
+      allPlugins.push({
+        id: plugin.id,
+        description: plugin.description,
+        requires: plugin.requires || [],
+        optional: plugin.optional || [],
+        provides: plugin.provides || null,
+        autoStart: plugin.autoStart,
+        enabled: !isDisabled
+      });
+      if (isDisabled) {
         disabled.push(plugin.id);
         continue;
       }
@@ -186,6 +198,7 @@ export async function main() {
       patterns: PageConfig.Extension.deferred
         .map(function (val) { return val.raw; })
     },
+    availablePlugins: allPlugins
   });
   register.forEach(function(item) { lab.registerPluginModule(item); });
   lab.start({ ignorePlugins });
