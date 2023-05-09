@@ -31,7 +31,10 @@ export class Plugins extends Panel {
   protected trans: TranslationBundle;
 }
 
-//const EntryTable = RenderTable<IEntry>;
+interface IProcessedEntry extends IEntry {
+  /** The token name (the part after colon) */
+  tokenName?: string;
+}
 
 class AvailableList extends ReactWidget {
   constructor(
@@ -39,6 +42,7 @@ class AvailableList extends ReactWidget {
     protected trans: TranslationBundle
   ) {
     super();
+    this.addClass('jp-pluginmanager-AvailableList');
     model.stateChanged.connect(this.update, this);
   }
 
@@ -56,17 +60,26 @@ class AvailableList extends ReactWidget {
             {this.trans.__('Updating plugin list…')}
           </div>
         ) : (
-          <Table<IEntry>
+          <Table<IProcessedEntry>
             blankIndicator={() => {
               return <div>{this.trans.__('No entries')}</div>;
             }}
+            sortKey={'plugin-id'}
             rows={this.model.available
               .filter(pkg => {
                 const pattern = new RegExp(this.model.query.toLowerCase());
                 return pattern.test(pkg.id) || pattern.test(pkg.extension);
               })
               .map(data => {
-                return { data, key: data.id };
+                return {
+                  data: {
+                    ...data,
+                    tokenName: data.provides
+                      ? data.provides.name.split(':')[1]
+                      : undefined
+                  },
+                  key: data.id
+                };
               })}
             columns={[
               {
@@ -97,7 +110,8 @@ class AvailableList extends ReactWidget {
                     {row.autoStart ? this.trans.__('Yes') : this.trans.__('No')}
                   </>
                 ),
-                sort: (a: IEntry, b: IEntry) => +a.autoStart - +b.autoStart
+                sort: (a: IEntry, b: IEntry) =>
+                  a.autoStart === b.autoStart ? 0 : a.autoStart ? -1 : 1
               },
               {
                 id: 'requires',
@@ -112,12 +126,18 @@ class AvailableList extends ReactWidget {
               {
                 id: 'provides',
                 label: this.trans.__('Provides'),
-                renderCell: (row: IEntry) => (
-                  <>{row.provides ? row.provides.name : '-'}</>
+                renderCell: (row: IProcessedEntry) => (
+                  <>
+                    {row.provides ? (
+                      <code title={row.provides.name}>{row.tokenName}</code>
+                    ) : (
+                      '-'
+                    )}
+                  </>
                 ),
-                sort: (a: IEntry, b: IEntry) =>
-                  (a.provides ? a.provides.name : '').localeCompare(
-                    b.provides ? b.provides.name : ''
+                sort: (a: IProcessedEntry, b: IProcessedEntry) =>
+                  (a.tokenName ? a.tokenName : '').localeCompare(
+                    b.tokenName ? b.tokenName : ''
                   )
               },
               {
@@ -128,9 +148,16 @@ class AvailableList extends ReactWidget {
                     type="checkbox"
                     defaultChecked={row.enabled}
                     disabled={this.model.canModify && this.model.isDisclaimed}
-                    onChange={
-                      this.model.isDisclaimed ? this.onAction.bind(this) : null
-                    }
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                      if (!this.model.isDisclaimed) {
+                        return;
+                      }
+                      if (event.target.value) {
+                        this.onAction('disable', row);
+                      } else {
+                        this.onAction('enable', row);
+                      }
+                    }}
                   />
                 ),
                 sort: (a: IEntry, b: IEntry) =>
@@ -168,15 +195,12 @@ class Header extends ReactWidget {
   ) {
     super();
     model.stateChanged.connect(this.update, this);
-    this.addClass('jp-pluginmanager-header');
+    this.addClass('jp-pluginmanager-Header');
   }
 
   render(): JSX.Element {
     return (
       <>
-        <div className="jp-pluginmanager-title">
-          <span>{this.trans.__('Plugin Manager')}</span>
-        </div>
         <FilterBox
           placeholder={this.trans.__('Filter')}
           disabled={!this.model.isDisclaimed}
@@ -185,7 +209,6 @@ class Header extends ReactWidget {
           }}
           useFuzzyFilter={false}
         />
-
         <div
           className={`jp-pluginmanager-pending ${
             this.model.hasPendingActions() ? 'jp-mod-hasPending' : ''

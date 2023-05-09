@@ -123,6 +123,7 @@ export class PluginListModel extends VDomModel {
     if (!entry.enabled) {
       throw new Error(`Already disabled: ${entry.id}`);
     }
+    // TODO: if there is any plugin which relies on entry, list them and ask
     await this.performAction('disable', entry);
     await this.refresh();
   }
