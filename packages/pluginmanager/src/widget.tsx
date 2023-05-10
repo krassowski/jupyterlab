@@ -21,6 +21,8 @@ export class Plugins extends Panel {
 
     this.trans = translator.load('jupyterlab');
 
+    this.addWidget(new Disclaimer(model, this.trans));
+
     const header = new Header(model, this.trans);
     this.addWidget(header);
 
@@ -185,6 +187,57 @@ class AvailableList extends ReactWidget {
       default:
         throw new Error(`Invalid action: ${action}`);
     }
+  }
+}
+
+class Disclaimer extends ReactWidget {
+  constructor(
+    protected model: PluginListModel,
+    protected trans: TranslationBundle
+  ) {
+    super();
+    model.stateChanged.connect(this.update, this);
+    this.addClass('jp-pluginmanager-Disclaimer');
+  }
+  render(): JSX.Element {
+    return (
+      <div>
+        <div>
+          {this.trans.__(
+            'Plugins are the building blocks of Jupyter frontend architecture. The core application is composed of multiple plugins and each extension can be composed of one or more plugins.'
+          )}
+          <ul>
+            <li>
+              {this.trans.__(
+                'Customise your experience by disabling the plugins you do not need (and get better performance).'
+              )}
+            </li>
+            <li>
+              {this.trans.__(
+                'Disabling core application plugins may render features and parts of the user interface unavailable.'
+              )}
+            </li>
+            <li>
+              {this.trans.__(
+                'To disable or uninstall an entire extension please use Extension Manager instead.'
+              )}
+            </li>
+            <li>
+              {this.trans.__(
+                'To re-enable previously disabled plugin from command line use:'
+              )}{' '}
+              <code>jupyter labextension enable {'{plugin-name}'}</code>
+            </li>
+          </ul>
+        </div>
+        <label>
+          <input type="checkbox" checked />
+          {this.trans.__(
+            'I understand implications of disabling core application plugins.'
+          )}
+        </label>
+      </div>
+    );
   }
 }
 
