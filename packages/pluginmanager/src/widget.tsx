@@ -1,9 +1,16 @@
 import { ITranslator, TranslationBundle } from '@jupyterlab/translation';
-import { FilterBox, ReactWidget } from '@jupyterlab/ui-components';
+import { FilterBox, LabIcon, ReactWidget } from '@jupyterlab/ui-components';
 import { Panel } from '@lumino/widgets';
 import * as React from 'react';
 import { Action, IEntry, PluginListModel } from './model';
 import { Table } from './table';
+
+import lockSvgStr from '../style/icons/lock.svg';
+
+export const lockIcon = new LabIcon({
+  name: 'pluginmanager:lock',
+  svgstr: lockSvgStr
+});
 
 export namespace Plugins {
   export interface IOptions {
@@ -33,11 +40,6 @@ export class Plugins extends Panel {
   protected trans: TranslationBundle;
 }
 
-interface IProcessedEntry extends IEntry {
-  /** The token name (the part after colon) */
-  tokenName?: string;
-}
-
 class AvailableList extends ReactWidget {
   constructor(
     protected model: PluginListModel,
@@ -51,10 +53,10 @@ class AvailableList extends ReactWidget {
   render(): JSX.Element {
     return (
       <>
-        {this.model.availableError !== null ? (
+        {this.model.statusError !== null ? (
           <ErrorMessage>
             {`Error querying installed extensions${
-              this.model.availableError ? `: ${this.model.availableError}` : '.'
+              this.model.statusError ? `: ${this.model.statusError}` : '.'
             }`}
           </ErrorMessage>
         ) : this.model.isLoading ? (
@@ -62,7 +64,7 @@ class AvailableList extends ReactWidget {
             {this.trans.__('Updating plugin list…')}
           </div>
         ) : (
-          <Table<IProcessedEntry>
+          <Table<IEntry>
             blankIndicator={() => {
               return <div>{this.trans.__('No entries')}</div>;
             }}
@@ -74,12 +76,7 @@ class AvailableList extends ReactWidget {
               })
               .map(data => {
                 return {
-                  data: {
-                    ...data,
-                    tokenName: data.provides
-                      ? data.provides.name.split(':')[1]
-                      : undefined
-                  },
+                  data: data,
                   key: data.id
                 };
               })}
@@ -126,44 +123,62 @@ class AvailableList extends ReactWidget {
                 isHidden: true
               },
               {
+                id: 'extension',
+                label: this.trans.__('Extension'),
+                renderCell: (row: IEntry) => <>{row.extension}</>,
+                sort: (a: IEntry, b: IEntry) =>
+                  a.extension.localeCompare(b.extension)
+              },
+              {
                 id: 'provides',
                 label: this.trans.__('Provides'),
-                renderCell: (row: IProcessedEntry) => (
+                renderCell: (row: IEntry) => (
                   <>
                     {row.provides ? (
-                      <code title={row.provides.name}>{row.tokenName}</code>
+                      <code title={row.provides.name}>{row.tokenLabel}</code>
                     ) : (
                       '-'
                     )}
                   </>
                 ),
-                sort: (a: IProcessedEntry, b: IProcessedEntry) =>
-                  (a.tokenName ? a.tokenName : '').localeCompare(
-                    b.tokenName ? b.tokenName : ''
-                  )
+                sort: (a: IEntry, b: IEntry) =>
+                  (a.tokenLabel || '').localeCompare(b.tokenLabel || '')
               },
               {
                 id: 'enabled',
                 label: this.trans.__('Enabled'),
                 renderCell: (row: IEntry) => (
-                  <input
-                    type="checkbox"
-                    defaultChecked={row.enabled}
-                    disabled={this.model.canModify && this.model.isDisclaimed}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-                      if (!this.model.isDisclaimed) {
-                        return;
-                      }
-                      if (event.target.value) {
-                        this.onAction('disable', row);
-                      } else {
-                        this.onAction('enable', row);
-                      }
-                    }}
-                  />
+                  <>
+                    <input
+                      type="checkbox"
+                      checked={row.enabled}
+                      disabled={row.locked || !this.model.isDisclaimed}
+                      onChange={(
+                        event: React.ChangeEvent<HTMLInputElement>
+                      ) => {
+                        if (!this.model.isDisclaimed) {
+                          return;
+                        }
+                        if (event.target.checked) {
+                          this.onAction('enable', row);
+                        } else {
+                          this.onAction('disable', row);
+                        }
+                      }}
+                    />
+                    {row.locked ? (
+                      <lockIcon.react
+                        tag="span"
+                        title={this.trans.__(
+                          'This plugin was locked by system administrator or is a cricital dependency and cannot be enabled/disabled.'
+                        )}
+                      />
+                    ) : (
+                      ''
+                    )}
+                  </>
                 ),
-                sort: (a: IEntry, b: IEntry) =>
-                  a.description.localeCompare(b.description)
+                sort: (a: IEntry, b: IEntry) => +a.enabled - +b.enabled
               }
             ]}
           />
@@ -204,36 +219,20 @@ class Disclaimer extends ReactWidget {
       <div>
         <div>
           {this.trans.__(
-            'Plugins are the building blocks of Jupyter frontend architecture. The core application is composed of multiple plugins and each extension can be composed of one or more plugins.'
+            'Customise your experience/improve performance by disabling plugins you do not need. To disable or uninstall an entire extension use the Extension Manager instead. Changes will apply after reloading JupyterLab.'
           )}
-          <ul>
-            <li>
-              {this.trans.__(
-                'Customise your experience by disabling the plugins you do not need (and get better performance).'
-              )}
-            </li>
-            <li>
-              {this.trans.__(
-                'Disabling core application plugins may render features and parts of the user interface unavailable.'
-              )}
-            </li>
-            <li>
-              {this.trans.__(
-                'To disable or uninstall an entire extension please use Extension Manager instead.'
-              )}
-            </li>
-            <li>
-              {this.trans.__(
-                'To re-enable previously disabled plugin from command line use:'
-              )}{' '}
-              <code>jupyter labextension enable {'{plugin-name}'}</code>
-            </li>
-          </ul>
         </div>
         <label>
-          <input type="checkbox" checked />
+          <input
+            type="checkbox"
+            className="jp-mod-styled jp-pluginmanager-Disclaimer-checkbox"
+            defaultChecked={this.model.isDisclaimed}
+            onChange={event => {
+              this.model.isDisclaimed = event.target.checked;
+            }}
+          />
           {this.trans.__(
-            'I understand implications of disabling core application plugins.'
+            'I understand that disabling core application plugins may render features and parts of the user interface unavailable and recovery using `jupyter labextension enable <plugin-name>` command may be required'
           )}
         </label>
       </div>
@@ -256,7 +255,6 @@ class Header extends ReactWidget {
       <>
         <FilterBox
           placeholder={this.trans.__('Filter')}
-          disabled={!this.model.isDisclaimed}
           updateFilter={(fn, query) => {
             this.model.query = query ?? '';
           }}

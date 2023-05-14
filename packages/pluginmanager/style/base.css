@@ -1,10 +1,16 @@
 .jp-pluginmanager {
   display: grid;
-  grid-template-rows: min-content 1fr;
+  grid-template-rows: min-content min-content 1fr;
 }
 
-.jp-pluginmanager-Header {
+.jp-pluginmanager-Header,
+.jp-pluginmanager-Disclaimer {
   padding: 8px;
+}
+
+.jp-pluginmanager-Disclaimer-checkbox {
+  position: relative;
+  top: 2px;
 }
 
 .jp-pluginmanager-AvailableList {
@@ -15,8 +21,9 @@
   position: sticky;
 }
 
-.jp-sortable-table-tr > td {
-  border-left: var(--jp-border-width) solid var(--jp-border-color3);
+.jp-pluginmanager-PluginInUseMessage {
+  text-wrap: balance;
+  max-width: 550px;
 }
 
 /**
@@ -48,6 +55,14 @@
 .jp-sortable-table td {
   padding: 4px 12px 2px;
   height: 18px;
+}
+
+.jp-sortable-table-tr > td {
+  border-left: var(--jp-border-width) solid var(--jp-border-color3);
+}
+
+.jp-sortable-table-tr:hover > td {
+  border-color: var(--jp-border-color2);
 }
 
 .jp-sortable-table th {

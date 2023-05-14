@@ -10,7 +10,9 @@ import './style.js';
 async function createModule(scope, module) {
   try {
     const factory = await window._JUPYTERLAB[scope].get(module);
-    return factory();
+    const instance = factory();
+    instance.__scope__ = scope;
+    return instance;
   } catch(e) {
     console.warn(`Failed to create module: package: ${scope}; module: ${module}`);
     throw e;
@@ -114,7 +116,8 @@ export async function main() {
         optional: plugin.optional || [],
         provides: plugin.provides || null,
         autoStart: plugin.autoStart,
-        enabled: !isDisabled
+        enabled: !isDisabled,
+        extension: extension.__scope__
       });
       if (isDisabled) {
         disabled.push(plugin.id);
@@ -134,6 +137,7 @@ export async function main() {
   if (!queuedFederated.includes('{{@key}}')) {
     try {
       let ext = require('{{@key}}{{#if this}}/{{this}}{{/if}}');
+      ext.__scope__ = '{{@key}}';
       for (let plugin of activePlugins(ext)) {
         mimeExtensions.push(plugin);
       }
@@ -160,6 +164,7 @@ export async function main() {
   if (!queuedFederated.includes('{{@key}}')) {
     try {
       let ext = require('{{@key}}{{#if this}}/{{this}}{{/if}}');
+      ext.__scope__ = '{{@key}}';
       for (let plugin of activePlugins(ext)) {
         register.push(plugin);
       }

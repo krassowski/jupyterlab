@@ -16,20 +16,15 @@ import {
   MainAreaWidget,
   WidgetTracker
 } from '@jupyterlab/apputils';
-import { PageConfig } from '@jupyterlab/coreutils';
 import { IMainMenu } from '@jupyterlab/mainmenu';
-import { ITranslator } from '@jupyterlab/translation';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 import {
   CommandToolbarButton,
   extensionIcon,
   refreshIcon
 } from '@jupyterlab/ui-components';
 import { ReadonlyJSONObject } from '@lumino/coreutils';
-import {
-  IPluginManagerMetadata,
-  PluginListModel,
-  Plugins
-} from '@jupyterlab/pluginmanager';
+import { PluginListModel, Plugins } from '@jupyterlab/pluginmanager';
 
 /**
  * The command IDs used by the help plugin.
@@ -40,30 +35,26 @@ namespace CommandIDs {
   export const refreshPlugins = 'pluginmanager:refresh';
 }
 
+const PLUGIN_ID = '@jupyterlab/pluginmanager-extension:plugin';
+
 /**
  * A plugin for managing status of other plugins.
  */
 const pluginmanager: JupyterFrontEndPlugin<void> = {
-  id: '@jupyterlab/pluginmanager-extension:plugin',
+  id: PLUGIN_ID,
   description: 'Enable or disable individual plugins.',
   autoStart: true,
-  requires: [ITranslator],
-  optional: [IMainMenu, ICommandPalette, ILayoutRestorer],
+  requires: [],
+  optional: [ITranslator, IMainMenu, ICommandPalette, ILayoutRestorer],
   activate: (
     app: JupyterLab,
-    translator: ITranslator,
+    translator: ITranslator | null,
     menu: IMainMenu | null,
     palette: ICommandPalette | null,
     restorer: ILayoutRestorer | null
   ) => {
-    console.log('loading pluginManager');
-    // Bail if no plugin manager API is available from the server.
-    //if (!PageConfig.getOption('pluginManager')) {
-    //  console.log('bailing - pluginManager option absent');
-    //  return;
-    //}
-
     const { commands, shell } = app;
+    translator = translator ?? nullTranslator;
     const trans = translator.load('jupyterlab');
 
     // Translation strings.
@@ -82,13 +73,25 @@ const pluginmanager: JupyterFrontEndPlugin<void> = {
     function createWidget(args?: PluginListModel.IConfigurableState) {
       const model = new PluginListModel({
         ...args,
-        app,
+        pluginData: {
+          availablePlugins: app.info.availablePlugins
+        },
         serverSettings: app.serviceManager.serverSettings,
-        serverMetadata: JSON.parse(
-          PageConfig.getOption('pluginManager') || '{}'
-        ) as IPluginManagerMetadata
+        extraLockedPlugins: [
+          PLUGIN_ID,
+          // UI will not proceed beyond splash without `layout` plugin
+          '@jupyterlab/application-extension:layout',
+          // State restoration does not work well without resolver,
+          // can leave user locked out of the plugin manager
+          // (if command palette and menu are disabled too)
+          '@jupyterlab/apputils-extension:resolver'
+        ],
+        translator: translator ?? nullTranslator
       });
-      const content = new Plugins({ model, translator });
+      const content = new Plugins({
+        model,
+        translator: translator ?? nullTranslator
+      });
       content.title.label = widgetLabel;
       content.title.icon = extensionIcon;
       const main = new MainAreaWidget({ content, reveal: model.ready });

@@ -1,9 +1,13 @@
-import { JupyterLab } from '@jupyterlab/application';
+import type { JupyterLab } from '@jupyterlab/application';
+import { Dialog, showDialog } from '@jupyterlab/apputils';
 import { URLExt } from '@jupyterlab/coreutils';
 import { ServerConnection } from '@jupyterlab/services';
 import { VDomModel } from '@jupyterlab/ui-components';
 import { ISignal, Signal } from '@lumino/signaling';
 import { PromiseDelegate } from '@lumino/coreutils';
+import { ITranslator, TranslationBundle } from '@jupyterlab/translation';
+
+import { PluginInUseMessage, PluginRequiredMessage } from './dialogs';
 
 /**
  * The server API path for querying/modifying available plugins.
@@ -20,10 +24,6 @@ export type Action = 'enable' | 'disable';
  */
 export interface IEntry extends JupyterLab.IPluginInfo {
   /**
-   * TODO: how to handle system (core) plugins?
-   */
-
-  /**
    * Whether the plugin is locked (cannot be enabled/disabled).
    *
    * Administrators can lock plugins preventing users from introducing modifications.
@@ -31,6 +31,25 @@ export interface IEntry extends JupyterLab.IPluginInfo {
    * an indicator of the lock status.
    */
   locked: boolean;
+
+  /**
+   * Token name (if any) excluding the plugin prefix (unless none)
+   */
+  tokenLabel?: string;
+}
+
+interface IPluginManagerStatus {
+  /**
+   * Whether to lock (prevent enabling/disabling) all plugins.
+   */
+  allLocked: boolean;
+  /**
+   * A list of plugins or extensions that cannot be toggled.
+   *
+   * If extension name is provided, all its plugins will be disabled.
+   * The plugin names need to follow colon-separated format of `extension:plugin`.
+   */
+  lockRules: string[];
 }
 
 /**
@@ -48,54 +67,60 @@ export interface IActionReply {
   message?: string;
 }
 
-/**
- * Server-side plugin manager metadata
- */
-export interface IPluginManagerMetadata {
-  /**
-   * Whether the plugin manager can enable/disable plugins.
-   */
-  can_modify: boolean;
-}
-
 export namespace PluginListModel {
   export interface IConfigurableState {
     query?: string;
   }
+  /** A subset of `JupyterLab.IInfo` interface (defined to reduce API surface) */
+  export interface IPluginData {
+    availablePlugins: JupyterLab.IPluginInfo[];
+  }
   export interface IOptions extends IConfigurableState {
-    app: JupyterLab;
-    serverMetadata?: IPluginManagerMetadata;
+    /**
+     * Plugin data.
+     */
+    pluginData: IPluginData;
+    /**
+     * Translator.
+     */
+    translator: ITranslator;
+    /**
+     * Server connection settings.
+     */
     serverSettings?: ServerConnection.ISettings;
+    /**
+     * Additional plugins to lock in addition to plugins locked on the server-side.
+     *
+     * This is intended exclusively to protect user from shooting themselves in
+     * the foot by accidentally disabling the plugin manager or other core plugins
+     * (which would mean they cannot recover) and is not enforced on server side.
+     */
+    extraLockedPlugins?: string[];
   }
 }
 
 export class PluginListModel extends VDomModel {
   constructor(options: PluginListModel.IOptions) {
     super();
-    this._app = options.app;
+    this._pluginData = options.pluginData;
     this._serverSettings =
       options.serverSettings || ServerConnection.makeSettings();
     this._query = options.query || '';
-    // The page config option may not be defined; e.g. in the federated example
-    const metadata = options.serverMetadata || { can_modify: false };
-    this.canModify = metadata.can_modify;
+    this._extraLockedPlugins = options.extraLockedPlugins ?? [];
     this.refresh()
       .then(() => this._ready.resolve())
       .catch(e => this._ready.reject(e));
+    this._trans = options.translator.load('jupyterlab');
   }
 
-  private _app: JupyterLab;
-  readonly canModify: boolean;
-  readonly isDisclaimed = true; // TODO
-
   get available(): ReadonlyArray<IEntry> {
-    return this._available;
+    return [...this._available.values()];
   }
 
   /**
-   * Contains an error message if an error occurred when querying available packages.
+   * Contains an error message if an error occurred when querying plugin status.
    */
-  availableError: string | null = null;
+  statusError: string | null = null;
 
   get isLoading(): boolean {
     return this._isLoading;
@@ -107,25 +132,96 @@ export class PluginListModel extends VDomModel {
    * @param entry An entry indicating which plugin to enable.
    */
   async enable(entry: IEntry): Promise<void> {
-    if (entry.enabled) {
-      throw new Error(`Already enabled: ${entry.id}`);
+    if (!this.isDisclaimed) {
+      throw new Error('User has not confirmed the dislaimer');
     }
-    await this.performAction('enable', entry);
-    await this.refresh();
+    await this._performAction('enable', entry);
+    entry.enabled = true;
   }
 
   /**
    * Disable a plugin.
    *
    * @param entry An entry indicating which plugin to disable.
+   * @returns Whether the plugin was disabled
    */
   async disable(entry: IEntry): Promise<void> {
-    if (!entry.enabled) {
-      throw new Error(`Already disabled: ${entry.id}`);
+    if (!this.isDisclaimed) {
+      throw new Error('User has not confirmed the dislaimer');
     }
-    // TODO: if there is any plugin which relies on entry, list them and ask
-    await this.performAction('disable', entry);
-    await this.refresh();
+    const { dependants, optionalDependants } = this.getDependants(entry);
+    if (dependants.length > 0) {
+      // We require user to disable plugins one-by-one as each of them may have
+      // further dependencies (or optional dependencies) and we want the user to
+      // take a pause to think about those.
+      void showDialog({
+        title: this._trans.__('This plugin is required by other plugins'),
+        body: PluginRequiredMessage({
+          plugin: entry,
+          dependants,
+          trans: this._trans
+        }),
+        buttons: [Dialog.okButton({ label: this._trans.__('Ok') })]
+      });
+      return;
+    }
+    if (optionalDependants.length > 0) {
+      const userConfirmation = await showDialog({
+        title: this._trans.__('This plugin is used by other plugins'),
+        body: PluginInUseMessage({
+          plugin: entry,
+          optionalDependants,
+          trans: this._trans
+        }),
+        buttons: [
+          Dialog.okButton({ label: this._trans.__('Disable anyway') }),
+          Dialog.cancelButton({ label: this._trans.__('Cancel') })
+        ]
+      });
+      if (!userConfirmation.button.accept) {
+        return;
+      }
+    }
+
+    await this._performAction('disable', entry);
+    if (this.actionError) {
+      return;
+    }
+    entry.enabled = false;
+  }
+
+  protected getDependants(entry: IEntry): {
+    dependants: IEntry[];
+    optionalDependants: IEntry[];
+  } {
+    const dependants = [];
+    const optionalDependants = [];
+    if (entry.provides) {
+      const tokenName = entry.provides.name;
+      for (const plugin of this._available.values()) {
+        if (!plugin.enabled) {
+          continue;
+        }
+        if (
+          plugin.requires
+            .filter(token => !!token)
+            .some(token => token.name === tokenName)
+        ) {
+          dependants.push(plugin);
+        }
+        if (
+          plugin.optional
+            .filter(token => !!token)
+            .some(token => token.name === tokenName)
+        ) {
+          optionalDependants.push(plugin);
+        }
+      }
+    }
+    return {
+      dependants,
+      optionalDependants
+    };
   }
 
   /**
@@ -141,10 +237,7 @@ export class PluginListModel extends VDomModel {
    * @param action A valid action to perform.
    * @param entry The plugin to perform the action on.
    */
-  protected performAction(
-    action: string,
-    entry: IEntry
-  ): Promise<IActionReply> {
+  private _performAction(action: string, entry: IEntry): Promise<IActionReply> {
     const actionRequest = this._requestAPI<IActionReply>(
       {},
       {
@@ -164,7 +257,7 @@ export class PluginListModel extends VDomModel {
         this.actionError = reason.toString();
       }
     );
-    this.addPendingAction(actionRequest);
+    this._addPendingAction(actionRequest);
     return actionRequest;
   }
 
@@ -173,7 +266,7 @@ export class PluginListModel extends VDomModel {
    *
    * @param pending A promise that resolves when the action is completed.
    */
-  protected addPendingAction(pending: Promise<any>): void {
+  private _addPendingAction(pending: Promise<any>): void {
     // Add to pending actions collection
     this._pendingActions.push(pending);
 
@@ -190,29 +283,57 @@ export class PluginListModel extends VDomModel {
   }
 
   /**
-   * Refresh installed packages
+   * Refresh plugin lock statuses
    */
   async refresh(): Promise<void> {
-    this.availableError = null;
+    this.statusError = null;
     this._isLoading = true;
     this.stateChanged.emit();
     try {
       // Get the lock status from backend; if backend is not available,
       // we assume that all plugins are locked.
-      //if (!PageConfig.getOption('pluginManager')) {
-      //}
-      //const plugins = await this._requestAPI<IEntry[]>();
+      const fallback: IPluginManagerStatus = {
+        allLocked: true,
+        lockRules: []
+      };
+      const status =
+        (await this._requestAPI<IPluginManagerStatus>()) ?? fallback;
 
-      this._available = this._app.info.availablePlugins.map(plugin => {
-        return {
-          ...plugin,
-          locked: true // TODO:
-        };
-      });
+      this._available = new Map(
+        this._pluginData.availablePlugins.map(plugin => {
+          let tokenLabel = plugin.provides
+            ? plugin.provides.name.split(':')[1]
+            : undefined;
+          if (plugin.provides && !tokenLabel) {
+            tokenLabel = plugin.provides.name;
+          }
+          return [
+            plugin.id,
+            {
+              ...plugin,
+              locked: this._isLocked(plugin.id, status),
+              tokenLabel
+            }
+          ];
+        })
+      );
     } catch (reason) {
-      this.availableError = reason.toString();
+      this.statusError = reason.toString();
     } finally {
       this._isLoading = false;
+      this.stateChanged.emit();
+    }
+  }
+
+  /**
+   * Whether the warning is disclaimed or not.
+   */
+  get isDisclaimed(): boolean {
+    return this._isDisclaimed;
+  }
+  set isDisclaimed(v: boolean) {
+    if (v !== this._isDisclaimed) {
+      this._isDisclaimed = v;
       this.stateChanged.emit();
     }
   }
@@ -245,6 +366,27 @@ export class PluginListModel extends VDomModel {
    */
   get ready(): Promise<void> {
     return this._ready.promise;
+  }
+
+  private _isLocked(pluginId: string, status: IPluginManagerStatus): boolean {
+    if (status.allLocked) {
+      // All plugins are locked.
+      return true;
+    }
+    if (this._extraLockedPlugins.includes(pluginId)) {
+      // Plugin is locked on client side.
+      return true;
+    }
+    const extension = pluginId.split(':')[0];
+    if (status.lockRules.includes(extension)) {
+      // Entire extension is locked.
+      return true;
+    }
+    if (status.lockRules.includes(pluginId)) {
+      // This plugin specifically is locked.
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -292,10 +434,14 @@ export class PluginListModel extends VDomModel {
 
   actionError: string | null = null;
   private _trackerDataChanged: Signal<PluginListModel, void> = new Signal(this);
-  private _available: IEntry[] = [];
+  private _available: Map<string, IEntry>;
   private _isLoading = false;
   private _pendingActions: Promise<any>[] = [];
   private _serverSettings: ServerConnection.ISettings;
   private _ready = new PromiseDelegate<void>();
   private _query: string;
+  private _pluginData: PluginListModel.IPluginData;
+  private _extraLockedPlugins: string[];
+  private _trans: TranslationBundle;
+  private _isDisclaimed: boolean = false;
 }

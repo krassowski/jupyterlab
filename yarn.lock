@@ -4241,6 +4241,7 @@ __metadata:
   resolution: "@jupyterlab/pluginmanager@workspace:packages/pluginmanager"
   dependencies:
     "@jupyterlab/application": ^4.0.0-rc.1
+    "@jupyterlab/apputils": ^4.0.0-rc.1
     "@jupyterlab/coreutils": ^6.0.0-rc.1
     "@jupyterlab/services": ^7.0.0-rc.1
     "@jupyterlab/testing": ^4.0.0-rc.1
