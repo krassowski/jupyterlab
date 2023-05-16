@@ -42,11 +42,7 @@ describe('rendermime/factories', () => {
   describe('textRendererFactory', () => {
     describe('#mimeTypes', () => {
       it('should have text related mimeTypes', () => {
-        const mimeTypes = [
-          'text/plain',
-          'application/vnd.jupyter.stdout',
-          'application/vnd.jupyter.stderr'
-        ];
+        const mimeTypes = ['text/plain', 'application/vnd.jupyter.stdout'];
         expect(textRendererFactory.mimeTypes).toEqual(mimeTypes);
       });
     });

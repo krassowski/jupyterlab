@@ -505,14 +505,17 @@ const ErrorTextAutoLinkOptions: IAutoLinkOptions = {
   checkPathUrls: true
 };
 
-function autolink(
-  content: string,
-  options: IAutoLinkOptions
-): Array<HTMLAnchorElement | Text> {
+interface ILinker {
+  regex: RegExp;
+  textToAnchor: (text: string) => HTMLAnchorElement;
+  processText?: (text: string) => string;
+}
+
+namespace ILinker {
   // Taken from Visual Studio Code:
   // https://github.com/microsoft/vscode/blob/9f709d170b06e991502153f281ec3c012add2e42/src/vs/workbench/contrib/debug/browser/linkDetector.ts#L17-L18
   const controlCodes = '\\u0000-\\u0020\\u007f-\\u009f';
-  const webLinkRegex = new RegExp(
+  export const webLinkRegex = new RegExp(
     '(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\\/\\/|data:|www\\.)[^\\s' +
       controlCodes +
       '"]{2,}[^\\s' +
@@ -520,7 +523,6 @@ function autolink(
       '"\'(){}\\[\\],:;.!?]',
     'ug'
   );
-
   // Taken from Visual Studio Code:
   // https://github.dev/microsoft/vscode/blob/3e407526a1e2ff22cacb69c7e353e81a12f41029/extensions/notebook-renderers/src/linkify.ts#L9
   const winAbsPathRegex = /(?:[a-zA-Z]:(?:(?:\\|\/)[\w\.-]*)+)/;
@@ -530,34 +532,75 @@ function autolink(
   );
   const posixPathRegex = /((?:\~|\.)?(?:\/[\w\.-]*)+)/;
   const lineColumnRegex = /(?:\:([\d]+))?(?:\:([\d]+))?/;
+  // TODO: this needs to be taken from kernel, not from browser as browser may be different from kernel.
   const isWindows = navigator.userAgent.indexOf('Windows') >= 0;
-  const pathLinkRegex = new RegExp(
+  export const pathLinkRegex = new RegExp(
     `${isWindows ? winPathRegex.source : posixPathRegex.source}${
       lineColumnRegex.source
     }`,
     'g'
   );
+}
 
+const webLinker: ILinker = {
+  regex: ILinker.webLinkRegex,
+  textToAnchor(url: string) {
+    const anchor = document.createElement('a');
+    anchor.href = url.startsWith('www.') ? 'https://' + url : url;
+    anchor.rel = 'noopener';
+    anchor.target = '_blank';
+    anchor.appendChild(document.createTextNode(url));
+    return anchor;
+  },
+  processText(url: string) {
+    // Special case when the URL ends with ">" or "<"
+    const lastChars = url.slice(-1);
+    const endsWithGtLt = ['>', '<'].indexOf(lastChars) !== -1;
+    const len = endsWithGtLt ? url.length - 1 : url.length;
+    url = url.slice(0, len);
+    return url;
+  }
+};
+
+const pathLinker: ILinker = {
+  regex: ILinker.pathLinkRegex,
+  textToAnchor(path: string) {
+    const anchor = document.createElement('a');
+    anchor.href = path;
+    anchor.appendChild(document.createTextNode(path.slice(0, path.length)));
+    return anchor;
+  }
+};
+
+function autolink(
+  content: string,
+  options: IAutoLinkOptions
+): Array<HTMLAnchorElement | Text> {
   const { checkPathUrls, checkWebUrls } = options;
 
-  const regexes = [webLinkRegex, pathLinkRegex];
+  const linkers = [webLinker, pathLinker];
   const enabled = [checkWebUrls, checkPathUrls];
-  const kinds = ['web', 'path'];
 
   const nodes: Array<HTMLAnchorElement | Text> = [];
 
+  // There are two ways to implement competitive regexes:
+  // - two heads (which would need to resolve overlaps), or
+  // - (simpler) divide and recurse
+
   const linkify = (content: string, regexIndex: number) => {
-    if (regexIndex >= regexes.length) {
+    if (regexIndex >= linkers.length) {
       nodes.push(document.createTextNode(content));
       return;
     }
 
-    const regex = regexes[regexIndex];
+    const linker = linkers[regexIndex];
     const isEnabled = enabled[regexIndex];
 
     if (isEnabled) {
-      let match;
+      let match: RegExpExecArray | null;
       let currentIndex = 0;
+      const regex = linker.regex;
+      // Reset regex
       regex.lastIndex = 0;
 
       while ((match = regex.exec(content)) !== null) {
@@ -566,13 +609,10 @@ function autolink(
           linkify(stringBeforeMatch, regexIndex + 1);
         }
 
-        const value = match[0];
-        if (kinds[regexIndex] === 'web') {
-          nodes.push(convertToUrlAnchor(value));
-        } else if (kinds[regexIndex] === 'path') {
-          nodes.push(convertToPathAnchor(value));
-        }
-
+        const value = linker.processText
+          ? linker.processText(match[0])
+          : match[0];
+        nodes.push(linker.textToAnchor(value));
         currentIndex = match.index + value.length;
       }
       const stringAfterMatches = content.substring(currentIndex);
@@ -586,27 +626,6 @@ function autolink(
 
   linkify(content, 0);
   return nodes;
-}
-
-function convertToUrlAnchor(url: string): HTMLAnchorElement {
-  // Special case when the URL ends with ">" or "<"
-  const lastChars = url.slice(-1);
-  const endsWithGtLt = ['>', '<'].indexOf(lastChars) !== -1;
-  const len = endsWithGtLt ? url.length - 1 : url.length;
-  const anchor = document.createElement('a');
-  url = url.slice(0, len);
-  anchor.href = url.startsWith('www.') ? 'https://' + url : url;
-  anchor.rel = 'noopener';
-  anchor.target = '_blank';
-  anchor.appendChild(document.createTextNode(url.slice(0, len)));
-  return anchor;
-}
-
-function convertToPathAnchor(path: string): HTMLAnchorElement {
-  const anchor = document.createElement('a');
-  anchor.innerText = path.slice(0, path.length);
-  anchor.href = path;
-  return anchor;
 }
 
 /**
@@ -859,6 +878,10 @@ export function renderError(
   const preTextContent = pre.textContent;
 
   if (preTextContent) {
+    // TODO this needs to respect sanitizer options
+
+    // TODO needs to reuse handleAnchor with resolver logic, but only for path URLs!
+
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
     const linkedNodes = autolink(preTextContent, ErrorTextAutoLinkOptions);
     let inAnchorElement = false;
