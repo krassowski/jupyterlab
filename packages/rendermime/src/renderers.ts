@@ -506,9 +506,21 @@ const ErrorTextAutoLinkOptions: IAutoLinkOptions = {
 };
 
 interface ILinker {
+  /**
+   * Regular expression capturing links in the group named `path`.
+   *
+   * Full match extend will be used as label for the link.
+   * Additional named groups represent locator fragments.
+   */
   regex: RegExp;
-  textToAnchor: (text: string) => HTMLAnchorElement;
-  processText?: (text: string) => string;
+  createAnchor: (
+    text: string,
+    label: string,
+    attributes?: Record<string, string>
+  ) => HTMLAnchorElement;
+  processPath?: (text: string) => string;
+  processLabel?: (text: string) => string;
+  isEnabled: boolean;
 }
 
 namespace ILinker {
@@ -516,43 +528,47 @@ namespace ILinker {
   // https://github.com/microsoft/vscode/blob/9f709d170b06e991502153f281ec3c012add2e42/src/vs/workbench/contrib/debug/browser/linkDetector.ts#L17-L18
   const controlCodes = '\\u0000-\\u0020\\u007f-\\u009f';
   export const webLinkRegex = new RegExp(
-    '(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\\/\\/|data:|www\\.)[^\\s' +
+    '(?<path>(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\\/\\/|data:|www\\.)[^\\s' +
       controlCodes +
       '"]{2,}[^\\s' +
       controlCodes +
-      '"\'(){}\\[\\],:;.!?]',
+      '"\'(){}\\[\\],:;.!?])',
     'ug'
   );
   // Taken from Visual Studio Code:
-  // https://github.dev/microsoft/vscode/blob/3e407526a1e2ff22cacb69c7e353e81a12f41029/extensions/notebook-renderers/src/linkify.ts#L9
+  // https://github.com/microsoft/vscode/blob/3e407526a1e2ff22cacb69c7e353e81a12f41029/extensions/notebook-renderers/src/linkify.ts#L9
   const winAbsPathRegex = /(?:[a-zA-Z]:(?:(?:\\|\/)[\w\.-]*)+)/;
   const winRelPathRegex = /(?:(?:\~|\.)(?:(?:\\|\/)[\w\.-]*)+)/;
   const winPathRegex = new RegExp(
     `(${winAbsPathRegex.source}|${winRelPathRegex.source})`
   );
   const posixPathRegex = /((?:\~|\.)?(?:\/[\w\.-]*)+)/;
-  const lineColumnRegex = /(?:\:([\d]+))?(?:\:([\d]+))?/;
+  const lineColumnRegex =
+    /(?:(?:\:|", line )(?<line>[\d]+))?(?:\:(?<column>[\d]+))?/;
   // TODO: this needs to be taken from kernel, not from browser as browser may be different from kernel.
   const isWindows = navigator.userAgent.indexOf('Windows') >= 0;
   export const pathLinkRegex = new RegExp(
-    `${isWindows ? winPathRegex.source : posixPathRegex.source}${
+    `(?<path>${isWindows ? winPathRegex.source : posixPathRegex.source})${
       lineColumnRegex.source
     }`,
     'g'
   );
 }
 
-const webLinker: ILinker = {
-  regex: ILinker.webLinkRegex,
-  textToAnchor(url: string) {
+class WebLinker implements ILinker {
+  constructor(public isEnabled: boolean) {
+    // no-op
+  }
+  regex = ILinker.webLinkRegex;
+  createAnchor(url: string, label: string) {
     const anchor = document.createElement('a');
     anchor.href = url.startsWith('www.') ? 'https://' + url : url;
     anchor.rel = 'noopener';
     anchor.target = '_blank';
-    anchor.appendChild(document.createTextNode(url));
+    anchor.appendChild(document.createTextNode(label));
     return anchor;
-  },
-  processText(url: string) {
+  }
+  processPath(url: string) {
     // Special case when the URL ends with ">" or "<"
     const lastChars = url.slice(-1);
     const endsWithGtLt = ['>', '<'].indexOf(lastChars) !== -1;
@@ -560,17 +576,34 @@ const webLinker: ILinker = {
     url = url.slice(0, len);
     return url;
   }
-};
+  processLabel(url: string) {
+    return this.processPath(url);
+  }
+}
 
-const pathLinker: ILinker = {
-  regex: ILinker.pathLinkRegex,
-  textToAnchor(path: string) {
+class PathLinker implements ILinker {
+  constructor(public isEnabled: boolean) {
+    // no-op
+  }
+  regex = ILinker.pathLinkRegex;
+  createAnchor(path: string, label: string, locators: Record<string, string>) {
     const anchor = document.createElement('a');
-    anchor.href = path;
-    anchor.appendChild(document.createTextNode(path.slice(0, path.length)));
+
+    // Store the path in dataset.
+    // Do not set `href` - at this point we do not know if the path is valid and
+    // accessible for application (and we want rendering those as links).
+    anchor.dataset.path = path;
+
+    // Store line using RFC 5147 fragment locator for text/plain files.
+    // It could be expanded to other formats, e.g. based on file extension.
+    const line = locators['line'];
+    let locator: string = typeof line !== 'undefined' ? `line=${line}` : '';
+    anchor.dataset.locator = locator;
+
+    anchor.appendChild(document.createTextNode(label));
     return anchor;
   }
-};
+}
 
 function autolink(
   content: string,
@@ -578,8 +611,7 @@ function autolink(
 ): Array<HTMLAnchorElement | Text> {
   const { checkPathUrls, checkWebUrls } = options;
 
-  const linkers = [webLinker, pathLinker];
-  const enabled = [checkWebUrls, checkPathUrls];
+  const linkers = [new WebLinker(checkWebUrls), new PathLinker(checkPathUrls)];
 
   const nodes: Array<HTMLAnchorElement | Text> = [];
 
@@ -593,26 +625,27 @@ function autolink(
       return;
     }
 
-    const linker = linkers[regexIndex];
-    const isEnabled = enabled[regexIndex];
+    const linker: ILinker = linkers[regexIndex];
 
-    if (isEnabled) {
+    if (linker.isEnabled) {
       let match: RegExpExecArray | null;
       let currentIndex = 0;
       const regex = linker.regex;
       // Reset regex
       regex.lastIndex = 0;
 
-      while ((match = regex.exec(content)) !== null) {
+      while (null != (match = regex.exec(content))) {
         const stringBeforeMatch = content.substring(currentIndex, match.index);
         if (stringBeforeMatch) {
           linkify(stringBeforeMatch, regexIndex + 1);
         }
 
-        const value = linker.processText
-          ? linker.processText(match[0])
+        const { path, ...locators } = match.groups!;
+        const value = linker.processPath ? linker.processPath(path) : path;
+        const label = linker.processLabel
+          ? linker.processLabel(match[0])
           : match[0];
-        nodes.push(linker.textToAnchor(value));
+        nodes.push(linker.createAnchor(value, label, locators));
         currentIndex = match.index + value.length;
       }
       const stringAfterMatches = content.substring(currentIndex);
@@ -758,12 +791,12 @@ export function renderText(options: renderText.IRenderOptions): Promise<void> {
   });
 
   // Set the sanitized content for the host node.
-  const ret = document.createElement('pre');
   const pre = document.createElement('pre');
   pre.innerHTML = content;
 
   const preTextContent = pre.textContent;
 
+  let ret: HTMLPreElement;
   if (preTextContent) {
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
     const linkedNodes =
@@ -771,56 +804,10 @@ export function renderText(options: renderText.IRenderOptions): Promise<void> {
         ? autolink(preTextContent, TextAutoLinkOptions)
         : [document.createTextNode(content)];
 
-    let inAnchorElement = false;
-
-    const combinedNodes: (HTMLAnchorElement | Text | HTMLSpanElement)[] = [];
     const preNodes = Array.from(pre.childNodes) as (Text | HTMLSpanElement)[];
-
-    for (let nodes of alignedNodes(preNodes, linkedNodes)) {
-      if (!nodes[0]) {
-        combinedNodes.push(nodes[1]);
-        inAnchorElement = nodes[1].nodeType !== Node.TEXT_NODE;
-        continue;
-      } else if (!nodes[1]) {
-        combinedNodes.push(nodes[0]);
-        inAnchorElement = false;
-        continue;
-      }
-      let [preNode, linkNode] = nodes;
-
-      const lastCombined = combinedNodes[combinedNodes.length - 1];
-
-      // If we are already in an anchor element and the anchor element did not change,
-      // we should insert the node from <pre> which is either Text node or coloured span Element
-      // into the anchor content as a child
-      if (
-        inAnchorElement &&
-        (linkNode as HTMLAnchorElement).href ===
-          (lastCombined as HTMLAnchorElement).href
-      ) {
-        lastCombined.appendChild(preNode);
-      } else {
-        // the `linkNode` is either Text or AnchorElement;
-        const isAnchor = linkNode.nodeType !== Node.TEXT_NODE;
-        // if we are NOT about to start an anchor element, just add the pre Node
-        if (!isAnchor) {
-          combinedNodes.push(preNode);
-          inAnchorElement = false;
-        } else {
-          // otherwise start a new anchor; the contents of the `linkNode` and `preNode` should be the same,
-          // so we just put the neatly formatted `preNode` inside the anchor node (`linkNode`)
-          // and append that to combined nodes.
-          linkNode.textContent = '';
-          linkNode.appendChild(preNode);
-          combinedNodes.push(linkNode);
-          inAnchorElement = true;
-        }
-      }
-    }
-    // Do not reuse `pre` element. Clearing out previous children is too slow...
-    for (const child of combinedNodes) {
-      ret.appendChild(child);
-    }
+    ret = mergeNodes(preNodes, linkedNodes);
+  } else {
+    ret = document.createElement('pre');
   }
 
   host.appendChild(ret);
@@ -859,11 +846,18 @@ export namespace renderText {
   }
 }
 
+/**
+ * Render error into a host node.
+ *
+ * @param options - The options for rendering.
+ *
+ * @returns A promise which resolves when rendering is complete.
+ */
 export function renderError(
   options: renderError.IRenderOptions
 ): Promise<void> {
   // Unpack the options.
-  const { host, sanitizer, source } = options;
+  const { host, linkHandler, sanitizer, resolver, source } = options;
 
   // Create the HTML content.
   const content = sanitizer.sanitize(Private.ansiSpan(source), {
@@ -871,75 +865,96 @@ export function renderError(
   });
 
   // Set the sanitized content for the host node.
-  const ret = document.createElement('pre');
   const pre = document.createElement('pre');
   pre.innerHTML = content;
 
   const preTextContent = pre.textContent;
 
+  let ret: HTMLPreElement;
   if (preTextContent) {
-    // TODO this needs to respect sanitizer options
-
-    // TODO needs to reuse handleAnchor with resolver logic, but only for path URLs!
-
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
-    const linkedNodes = autolink(preTextContent, ErrorTextAutoLinkOptions);
-    let inAnchorElement = false;
+    const linkedNodes =
+      sanitizer.getAutolink?.() ?? true
+        ? autolink(preTextContent, ErrorTextAutoLinkOptions)
+        : [document.createTextNode(content)];
 
-    const combinedNodes: (HTMLAnchorElement | Text | HTMLSpanElement)[] = [];
     const preNodes = Array.from(pre.childNodes) as (Text | HTMLSpanElement)[];
-
-    for (let nodes of alignedNodes(preNodes, linkedNodes)) {
-      if (!nodes[0]) {
-        combinedNodes.push(nodes[1]);
-        inAnchorElement = nodes[1].nodeType !== Node.TEXT_NODE;
-        continue;
-      } else if (!nodes[1]) {
-        combinedNodes.push(nodes[0]);
-        inAnchorElement = false;
-        continue;
-      }
-      let [preNode, linkNode] = nodes;
-
-      const lastCombined = combinedNodes[combinedNodes.length - 1];
-
-      // If we are already in an anchor element and the anchor element did not change,
-      // we should insert the node from <pre> which is either Text node or coloured span Element
-      // into the anchor content as a child
-      if (
-        inAnchorElement &&
-        (linkNode as HTMLAnchorElement).href ===
-          (lastCombined as HTMLAnchorElement).href
-      ) {
-        lastCombined.appendChild(preNode);
-      } else {
-        // the `linkNode` is either Text or AnchorElement;
-        const isAnchor = linkNode.nodeType !== Node.TEXT_NODE;
-        // if we are NOT about to start an anchor element, just add the pre Node
-        if (!isAnchor) {
-          combinedNodes.push(preNode);
-          inAnchorElement = false;
-        } else {
-          // otherwise start a new anchor; the contents of the `linkNode` and `preNode` should be the same,
-          // so we just put the neatly formatted `preNode` inside the anchor node (`linkNode`)
-          // and append that to combined nodes.
-          linkNode.textContent = '';
-          linkNode.appendChild(preNode);
-          combinedNodes.push(linkNode);
-          inAnchorElement = true;
-        }
-      }
-    }
-    // Do not reuse `pre` element. Clearing out previous children is too slow...
-    for (const child of combinedNodes) {
-      ret.appendChild(child);
-    }
+    ret = mergeNodes(preNodes, linkedNodes);
+  } else {
+    ret = document.createElement('pre');
   }
-
   host.appendChild(ret);
 
+  // Patch the paths if a resolver is available.
+  let promise: Promise<void>;
+  if (resolver) {
+    promise = Private.handlePaths(host, resolver, linkHandler);
+  } else {
+    promise = Promise.resolve(undefined);
+  }
+
   // Return the rendered promise.
-  return Promise.resolve(undefined);
+  return promise;
+}
+
+/**
+ * Merge `<span>` nodes from a `<pre>` element with `<a>` nodes from linker.
+ */
+function mergeNodes(
+  preNodes: (Text | HTMLSpanElement)[],
+  linkedNodes: (Text | HTMLAnchorElement)[]
+): HTMLPreElement {
+  const ret = document.createElement('pre');
+  let inAnchorElement = false;
+
+  const combinedNodes: (HTMLAnchorElement | Text | HTMLSpanElement)[] = [];
+
+  for (let nodes of alignedNodes(preNodes, linkedNodes)) {
+    if (!nodes[0]) {
+      combinedNodes.push(nodes[1]);
+      inAnchorElement = nodes[1].nodeType !== Node.TEXT_NODE;
+      continue;
+    } else if (!nodes[1]) {
+      combinedNodes.push(nodes[0]);
+      inAnchorElement = false;
+      continue;
+    }
+    let [preNode, linkNode] = nodes;
+
+    const lastCombined = combinedNodes[combinedNodes.length - 1];
+
+    // If we are already in an anchor element and the anchor element did not change,
+    // we should insert the node from <pre> which is either Text node or coloured span Element
+    // into the anchor content as a child
+    if (
+      inAnchorElement &&
+      (linkNode as HTMLAnchorElement).href ===
+        (lastCombined as HTMLAnchorElement).href
+    ) {
+      lastCombined.appendChild(preNode);
+    } else {
+      // the `linkNode` is either Text or AnchorElement;
+      const isAnchor = linkNode.nodeType !== Node.TEXT_NODE;
+      // if we are NOT about to start an anchor element, just add the pre Node
+      if (!isAnchor) {
+        combinedNodes.push(preNode);
+        inAnchorElement = false;
+      } else {
+        // otherwise start a new anchor; the contents of the `linkNode` and `preNode` should be the same,
+        // so we just put the neatly formatted `preNode` inside the anchor node (`linkNode`)
+        // and append that to combined nodes.
+        linkNode.textContent = '';
+        linkNode.appendChild(preNode);
+        combinedNodes.push(linkNode);
+        inAnchorElement = true;
+      }
+    }
+  }
+  // Do not reuse `pre` element. Clearing out previous children is too slow...
+  for (const child of combinedNodes) {
+    ret.appendChild(child);
+  }
+  return ret;
 }
 
 /**
@@ -964,6 +979,16 @@ export namespace renderError {
      * The source error to render.
      */
     source: string;
+
+    /**
+     * An optional url resolver.
+     */
+    resolver: IRenderMime.IResolver | null;
+
+    /**
+     * An optional link handler.
+     */
+    linkHandler: IRenderMime.ILinkHandler | null;
 
     /**
      * The application language translator.
@@ -1095,6 +1120,29 @@ namespace Private {
   }
 
   /**
+   * Resolve the paths in `<a>` elements `data` attributes.
+   *
+   * @param node - The head html element.
+   *
+   * @param resolver - A url resolver.
+   *
+   * @param linkHandler - An optional link handler for nodes.
+   *
+   * @returns a promise fulfilled when the relative urls have been resolved.
+   */
+  export async function handlePaths(
+    node: HTMLElement,
+    resolver: IRenderMime.IResolver,
+    linkHandler: IRenderMime.ILinkHandler | null
+  ): Promise<void> {
+    // Handle anchor elements.
+    const anchors = node.getElementsByTagName('a');
+    for (let i = 0; i < anchors.length; i++) {
+      await handlePathAnchor(anchors[i], resolver, linkHandler);
+    }
+  }
+
+  /**
    * Apply ids to headers.
    */
   export function headerAnchors(node: HTMLElement): void {
@@ -1199,6 +1247,64 @@ namespace Private {
       });
   }
 
+  /**
+   * Handle an anchor node.
+   */
+  async function handlePathAnchor(
+    anchor: HTMLAnchorElement,
+    resolver: IRenderMime.IResolver,
+    linkHandler: IRenderMime.ILinkHandler | null
+  ): Promise<void> {
+    let path = anchor.dataset.path || '';
+    let locator = anchor.dataset.locator ? '#' + anchor.dataset.locator : '';
+    delete anchor.dataset.path;
+    delete anchor.dataset.locator;
+
+    const isLocal = resolver.isLocal
+      ? resolver.isLocal(path)
+      : URLExt.isLocal(path);
+
+    // Bail if:
+    // - it is not a file-like url,
+    // -  the resolver does not support paths
+    // - there is no link handler, or if it does not support paths
+    if (
+      !path ||
+      !isLocal ||
+      !resolver.resolvePath ||
+      !linkHandler ||
+      !linkHandler.handlePath
+    ) {
+      anchor.replaceWith(...anchor.childNodes);
+      return Promise.resolve(undefined);
+    }
+    try {
+      // Find given path
+      const resolution = await resolver.resolvePath(path);
+
+      if (!resolution) {
+        // Bail if the file does not exist
+        console.log('Path resolution bailing: does not exist');
+        return Promise.resolve(undefined);
+      }
+
+      // Handle the click override.
+      linkHandler.handlePath(
+        anchor,
+        resolution.path,
+        resolution.scope,
+        locator
+      );
+
+      // Set the visible anchor.
+      anchor.href = resolution.path + locator;
+    } catch (err) {
+      // If there was an error getting the url,
+      // just make it an empty link.
+      console.warn('Path anchor error:', err);
+      anchor.href = '#linking-failed-see-console';
+    }
+  }
   const ANSI_COLORS = [
     'ansi-black',
     'ansi-red',

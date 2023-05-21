@@ -330,6 +330,23 @@ export namespace IDebugger {
   export interface IHandler extends DebuggerHandler.IHandler {}
 
   /**
+   * Interface for interacting with source viewer.
+   */
+  export interface ISourceViewer {
+    /**
+     * Open read-only editor for given source and optionally set a breakpoint.
+     */
+    openSource(
+      source: IDebugger.Source,
+      breakpoint?: IDebugger.IBreakpoint
+    ): Promise<void>;
+    /**
+     * Find source by path and then open read-only editor.
+     */
+    openPath(path: string, breakpoint?: IDebugger.IBreakpoint): Promise<void>;
+  }
+
+  /**
    * An interface for a scope.
    */
   export interface IScope {
@@ -1105,4 +1122,12 @@ export const IDebuggerSidebar = new Token<IDebugger.ISidebar>(
 export const IDebuggerHandler = new Token<IDebugger.IHandler>(
   '@jupyterlab/debugger:IDebuggerHandler',
   'A service for handling notebook debugger.'
+);
+
+/**
+ * The source viwer token.
+ */
+export const IDebuggerSourceViewer = new Token<IDebugger.ISourceViewer>(
+  '@jupyterlab/debugger:IDebuggerSourceViewer',
+  'A debugger source viewer.'
 );

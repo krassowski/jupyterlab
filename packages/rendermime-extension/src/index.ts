@@ -50,6 +50,8 @@ const plugin: JupyterFrontEndPlugin<IRenderMimeRegistry> = {
  */
 export default plugin;
 
+const DEBUGGER_OPEN_SOURCE = 'debugger:open-source';
+
 /**
  * Activate the rendermine plugin.
  */
@@ -68,7 +70,20 @@ function activate(
       execute: args => {
         const path = args['path'] as string | undefined | null;
         const id = args['id'] as string | undefined | null;
+        const scope = (args['scope'] as string | undefined | null) || 'server';
         if (!path) {
+          return;
+        }
+        if (scope === 'kernel') {
+          // Note: using a command instead of requiring
+          // `IDebuggerSourceViewer` to avoid a dependency cycle.
+          if (!app.commands.hasCommand(DEBUGGER_OPEN_SOURCE)) {
+            console.warn(
+              'Cannot open kernel file: debugger sources provider not available'
+            );
+            return;
+          }
+          app.commands.execute(DEBUGGER_OPEN_SOURCE, { path });
           return;
         }
         // First check if the path exists on the server.
@@ -103,6 +118,18 @@ function activate(
             app.commandLinker.connectNode(node, CommandIDs.handleLink, {
               path,
               id
+            });
+          },
+          handlePath: (
+            node: HTMLElement,
+            path: string,
+            scope: 'kernel' | 'server',
+            id?: string
+          ) => {
+            app.commandLinker.connectNode(node, CommandIDs.handleLink, {
+              path,
+              id,
+              scope
             });
           }
         },
