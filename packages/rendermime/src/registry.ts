@@ -405,7 +405,7 @@ export namespace RenderMimeRegistry {
         // For now we assume that kernel is in root dir.
         path = rootDir.split('/').slice(0, 3).join('/') + path.substring(1);
       }
-      if (path.startsWith(rootDir)) {
+      if (path.startsWith(rootDir) || path.startsWith('./')) {
         try {
           const relativePath = path.replace(rootDir, '');
           // If file exists on the server we have guessed right
