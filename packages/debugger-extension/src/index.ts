@@ -754,9 +754,7 @@ const sourceViewer: JupyterFrontEndPlugin<IDebugger.ISourceViewer> = {
     });
 
     return {
-      async open(source: IDebugger.Source, breakpoint?: IDebugger.IBreakpoint) {
-        return openSource(source, breakpoint);
-      }
+      open: openSource
     };
   }
 };
