@@ -617,7 +617,7 @@ function autolink(
 
   // There are two ways to implement competitive regexes:
   // - two heads (which would need to resolve overlaps), or
-  // - (simpler) divide and recurse
+  // - (simpler) divide and recurse (implemented below)
 
   const linkify = (content: string, regexIndex: number) => {
     if (regexIndex >= linkers.length) {
@@ -646,7 +646,7 @@ function autolink(
           ? linker.processLabel(match[0])
           : match[0];
         nodes.push(linker.createAnchor(value, label, locators));
-        currentIndex = match.index + value.length;
+        currentIndex = match.index + label.length;
       }
       const stringAfterMatches = content.substring(currentIndex);
       if (stringAfterMatches) {

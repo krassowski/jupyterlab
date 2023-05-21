@@ -507,6 +507,7 @@ describe('rendermime/factories', () => {
       '/usr/local/lib/message.py',
       '/tmp/ipykernel_361344/2220647380.py',
       '~/jupyterlab/a_file.py',
+      '~/jupyterlab/b_file.py',
       '/home/user/jupyterlab/a_file.py'
     ];
     const options = {
@@ -596,6 +597,19 @@ describe('rendermime/factories', () => {
               `<pre>Text with the URL ${beforeEncoded}<a href="${prefixedUrl}">${urlEncoded}</a>${afterEncoded} inside.</pre>`
             );
           })
+        );
+      });
+
+      it('should autolink multiple links', async () => {
+        const f = errorRendererFactory;
+        const source =
+          'prefix ~/jupyterlab/a_file.py:1 suffix\nprefix ~/jupyterlab/b_file.py:1 suffix';
+        const mimeType = 'application/vnd.jupyter.stderr';
+        const model = createModel(mimeType, source);
+        const w = f.createRenderer({ mimeType, ...options });
+        await w.renderModel(model);
+        expect(w.node.innerHTML).toBe(
+          '<pre>prefix <a href="~/jupyterlab/a_file.py#line=1">~/jupyterlab/a_file.py:1</a> suffix\nprefix <a href="~/jupyterlab/b_file.py#line=1">~/jupyterlab/b_file.py:1</a> suffix</pre>'
         );
       });
 
