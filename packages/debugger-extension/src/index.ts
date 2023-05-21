@@ -717,16 +717,6 @@ const sourceViewer: JupyterFrontEndPlugin<IDebugger.ISourceViewer> = {
       }
     };
 
-    const openPath = async (
-      path: string,
-      breakpoint?: IDebugger.IBreakpoint
-    ) => {
-      const source = await service.getSource({
-        path
-      });
-      return openSource(source, breakpoint);
-    };
-
     const trans = translator.load('jupyterlab');
 
     app.commands.addCommand(Debugger.CommandIDs.openSource, {
@@ -756,16 +746,15 @@ const sourceViewer: JupyterFrontEndPlugin<IDebugger.ISourceViewer> = {
             return;
           }
         }
-        openPath(path, undefined);
+        const source = await service.getSource({
+          path
+        });
+        return openSource(source);
       }
     });
 
     return {
-      openPath,
-      async openSource(
-        source: IDebugger.Source,
-        breakpoint?: IDebugger.IBreakpoint
-      ) {
+      async open(source: IDebugger.Source, breakpoint?: IDebugger.IBreakpoint) {
         return openSource(source, breakpoint);
       }
     };
@@ -1051,12 +1040,12 @@ const main: JupyterFrontEndPlugin<void> = {
         if (!source) {
           return;
         }
-        sourceViewer.openSource(source, breakpoint);
+        sourceViewer.open(source, breakpoint);
       };
 
       model.sources.currentSourceOpened.connect(
         (_: IDebugger.Model.ISources | null, source: IDebugger.Source) => {
-          sourceViewer.openSource(source);
+          sourceViewer.open(source);
         }
       );
       model.kernelSources.kernelSourceOpened.connect(onKernelSourceOpened);
@@ -1066,7 +1055,7 @@ const main: JupyterFrontEndPlugin<void> = {
           sourceReference: 0,
           path
         });
-        sourceViewer.openSource(source, breakpoint);
+        sourceViewer.open(source, breakpoint);
       });
     }
   }

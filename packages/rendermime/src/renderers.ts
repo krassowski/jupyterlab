@@ -1266,7 +1266,7 @@ namespace Private {
 
     // Bail if:
     // - it is not a file-like url,
-    // -  the resolver does not support paths
+    // - the resolver does not support paths
     // - there is no link handler, or if it does not support paths
     if (
       !path ||

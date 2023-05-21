@@ -336,14 +336,10 @@ export namespace IDebugger {
     /**
      * Open read-only editor for given source and optionally set a breakpoint.
      */
-    openSource(
+    open(
       source: IDebugger.Source,
       breakpoint?: IDebugger.IBreakpoint
     ): Promise<void>;
-    /**
-     * Find source by path and then open read-only editor.
-     */
-    openPath(path: string, breakpoint?: IDebugger.IBreakpoint): Promise<void>;
   }
 
   /**
