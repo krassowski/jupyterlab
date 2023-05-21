@@ -490,20 +490,19 @@ export namespace renderSVG {
   }
 }
 
+/**
+ * Options for auto linker.
+ */
 interface IAutoLinkOptions {
-  checkWebUrls: boolean;
-  checkPathUrls: boolean;
+  /**
+   * Whether to look for web URLs e.g. indicated by http schema or www prefix.
+   */
+  checkWeb: boolean;
+  /**
+   * Whether to look for path URIs.
+   */
+  checkPaths: boolean;
 }
-
-const TextAutoLinkOptions: IAutoLinkOptions = {
-  checkWebUrls: true,
-  checkPathUrls: false
-};
-
-const ErrorTextAutoLinkOptions: IAutoLinkOptions = {
-  checkWebUrls: true,
-  checkPathUrls: true
-};
 
 interface ILinker {
   /**
@@ -545,7 +544,7 @@ namespace ILinker {
   const posixPathRegex = /((?:\~|\.)?(?:\/[\w\.-]*)+)/;
   const lineColumnRegex =
     /(?:(?:\:|", line )(?<line>[\d]+))?(?:\:(?<column>[\d]+))?/;
-  // TODO: this needs to be taken from kernel, not from browser as browser may be different from kernel.
+  // TODO: this ought to come from kernel (browser may be on a different OS).
   const isWindows = navigator.userAgent.indexOf('Windows') >= 0;
   export const pathLinkRegex = new RegExp(
     `(?<path>${isWindows ? winPathRegex.source : posixPathRegex.source})${
@@ -555,6 +554,9 @@ namespace ILinker {
   );
 }
 
+/**
+ * Linker for web URLs.
+ */
 class WebLinker implements ILinker {
   constructor(public isEnabled: boolean) {
     // no-op
@@ -581,6 +583,9 @@ class WebLinker implements ILinker {
   }
 }
 
+/**
+ * Linker for path URIs.
+ */
 class PathLinker implements ILinker {
   constructor(public isEnabled: boolean) {
     // no-op
@@ -609,9 +614,10 @@ function autolink(
   content: string,
   options: IAutoLinkOptions
 ): Array<HTMLAnchorElement | Text> {
-  const { checkPathUrls, checkWebUrls } = options;
-
-  const linkers = [new WebLinker(checkWebUrls), new PathLinker(checkPathUrls)];
+  const linkers = [
+    new WebLinker(options.checkWeb),
+    new PathLinker(options.checkPaths)
+  ];
 
   const nodes: Array<HTMLAnchorElement | Text> = [];
 
@@ -801,7 +807,10 @@ export function renderText(options: renderText.IRenderOptions): Promise<void> {
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
     const linkedNodes =
       sanitizer.getAutolink?.() ?? true
-        ? autolink(preTextContent, TextAutoLinkOptions)
+        ? autolink(preTextContent, {
+            checkWeb: true,
+            checkPaths: false
+          })
         : [document.createTextNode(content)];
 
     const preNodes = Array.from(pre.childNodes) as (Text | HTMLSpanElement)[];
@@ -875,7 +884,10 @@ export function renderError(
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
     const linkedNodes =
       sanitizer.getAutolink?.() ?? true
-        ? autolink(preTextContent, ErrorTextAutoLinkOptions)
+        ? autolink(preTextContent, {
+            checkWeb: true,
+            checkPaths: true
+          })
         : [document.createTextNode(content)];
 
     const preNodes = Array.from(pre.childNodes) as (Text | HTMLSpanElement)[];
