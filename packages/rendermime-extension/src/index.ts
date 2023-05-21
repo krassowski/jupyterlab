@@ -83,8 +83,7 @@ function activate(
             );
             return;
           }
-          app.commands.execute(DEBUGGER_OPEN_SOURCE, { path });
-          return;
+          return app.commands.execute(DEBUGGER_OPEN_SOURCE, { path });
         }
         // First check if the path exists on the server.
         return docManager.services.contents
