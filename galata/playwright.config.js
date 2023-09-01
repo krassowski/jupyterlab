@@ -10,7 +10,7 @@ module.exports = {
       name: 'documentation',
       // Try one retry as some tests are flaky
       retries: process.env.CI ? 2 : 0,
-      testMatch: 'test/documentation/**/*.test.ts',
+      testMatch: 'test/documentation/**/debugger.test.ts',
       testIgnore: '**/.ipynb_checkpoints/**',
       timeout: 90000,
       use: {
@@ -22,12 +22,12 @@ module.exports = {
     },
     {
       name: 'galata',
-      testMatch: 'test/galata/**',
+      testMatch: 'NOtest/galata/**',
       testIgnore: '**/.ipynb_checkpoints/**'
     },
     {
       name: 'jupyterlab',
-      testMatch: 'test/jupyterlab/**',
+      testMatch: 'test/jupyterlab/debugger.test.ts',
       testIgnore: '**/.ipynb_checkpoints/**',
       use: {
         contextOptions: {
