@@ -283,6 +283,14 @@ export namespace galata {
       await jlabWithPage.goto(`tree/${tmpPath}`);
     }
 
+    // forward errors and console messages for debugging
+    jlabWithPage.on('pageerror', err => {
+      console.log('Forwarded:', err.message);
+    });
+    jlabWithPage.on('console', message => {
+      console.log('Forwarded:', message);
+    });
+
     return jlabWithPage;
   }
 
