@@ -895,9 +895,11 @@ export class StaticNotebook extends WindowedList {
         this.notebookConfig.windowingMode === 'defer' &&
         this.viewportNode.clientHeight < this.node.clientHeight
       ) {
+        console.log(`scheduling immediate update for ${cellIdx}`);
         // Spend more time rendering cells to fill the viewport
         await this._runOnIdleTime();
       } else {
+        console.log(`defering update for ${cellIdx} to idle callback`);
         this._scheduleCellRenderOnIdle();
       }
     } else {
@@ -912,9 +914,11 @@ export class StaticNotebook extends WindowedList {
     cell: Cell<ICellModel>,
     cellIdx: number
   ): Promise<void> {
+    console.log(`_updateForDeferMode started for ${cellIdx}`);
     cell.dataset.windowedListIndex = `${cellIdx}`;
     this.layout.insertWidget(cellIdx, cell);
     await cell.ready;
+    console.log(`_updateForDeferMode finished for ${cellIdx}`);
   }
 
   private _renderCSSAndJSOutputs(

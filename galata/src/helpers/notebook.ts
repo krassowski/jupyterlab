@@ -1066,29 +1066,45 @@ export class NotebookHelper {
     if (!(await this.isAnyActive())) {
       return false;
     }
+    console.log(`Setting ${cellType} cell ${cellIndex} with ${source} started`);
 
+    console.log(`Maybe will switch cell type`);
     await this.setCellType(cellIndex, cellType);
+    console.log(`Maybe will switch cell type finished`);
 
     if (
       !(await this.isCellSelected(cellIndex)) &&
       !(await this.selectCells(cellIndex))
     ) {
+      console.log(
+        `No setting cell ${cellIndex} content - cell was not selected and could not select it`
+      );
       return false;
     }
 
+    console.log(`Will enter cell ${cellIndex} editing mode`);
     await this.enterCellEditingMode(cellIndex);
+    console.log(`Entered cell ${cellIndex} editing mode`);
 
     const keyboard = this.page.keyboard;
     await keyboard.press('Control+A');
     // give CodeMirror time to style properly
+    console.log(`Will type`);
     await keyboard.type(source, { delay: cellType === 'code' ? 100 : 0 });
+    console.log(`Typed`);
 
+    console.log(`Will leave editing mode`);
     await this.leaveCellEditingMode(cellIndex);
+    console.log(`Left editing mode`);
 
     // give CodeMirror time to style properly
     if (cellType === 'code') {
+      console.log(`Will wait 500ms for ${cellIndex}`);
       await this.page.waitForTimeout(500);
+      console.log(`Done waiting 500ms for ${cellIndex}`);
     }
+
+    console.log(`Done setting cell ${cellIndex}`);
 
     return true;
   }
@@ -1106,14 +1122,17 @@ export class NotebookHelper {
   ): Promise<boolean> {
     const nbPanel = await this.activity.getPanel();
     if (!nbPanel) {
+      console.log('not setting cell type - no panel');
       return false;
     }
 
     if ((await this.getCellType(cellIndex)) === cellType) {
+      console.log('not setting cell type - already matches');
       return false;
     }
 
     if (!(await this.selectCells(cellIndex))) {
+      console.log('not setting cell type - no selection');
       return false;
     }
 
@@ -1122,6 +1141,7 @@ export class NotebookHelper {
       'div.jp-Notebook-toolbarCellTypeDropdown select'
     );
     if (!selectInput) {
+      console.log('not setting cell type could not select');
       return false;
     }
 
