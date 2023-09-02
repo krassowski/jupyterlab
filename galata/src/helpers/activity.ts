@@ -105,6 +105,7 @@ export class ActivityHelper {
         tab.getAttribute('data-id')
       );
       if (!id) {
+        console.log(`No id to get panel`);
         return null;
       }
       locator = page.getByRole('main').locator(`[role="tabpanel"][id="${id}"]`);
@@ -114,6 +115,7 @@ export class ActivityHelper {
     try {
       handle = await locator.elementHandle({ timeout: 500 });
     } catch {
+      console.log(`Getting panel ${name} timed out`);
       handle = null;
     }
 
