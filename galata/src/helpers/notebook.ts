@@ -1064,6 +1064,9 @@ export class NotebookHelper {
     source: string
   ): Promise<boolean> {
     if (!(await this.isAnyActive())) {
+      console.log(
+        `short-circut because no active - not setting ${cellType} cell ${cellIndex} with ${source}`
+      );
       return false;
     }
     console.log(`Setting ${cellType} cell ${cellIndex} with ${source} started`);
