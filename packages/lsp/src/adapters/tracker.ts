@@ -1,7 +1,7 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { LabShell } from '@jupyterlab/application';
+import type { LabShell } from '@jupyterlab/application';
 import { DocumentWidget } from '@jupyterlab/docregistry';
 
 import { ISignal, Signal } from '@lumino/signaling';

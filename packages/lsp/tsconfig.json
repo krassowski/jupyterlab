@@ -7,9 +7,6 @@
   "include": ["src/**/*"],
   "references": [
     {
-      "path": "../application"
-    },
-    {
       "path": "../apputils"
     },
     {
@@ -29,6 +26,9 @@
     },
     {
       "path": "../translation"
+    },
+    {
+      "path": "../application"
     }
   ]
 }
