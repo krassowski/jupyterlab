@@ -75,11 +75,12 @@
 |----------------------------------------------------------------------------*/
 @media only screen and (width <= 760px) {
   .jp-InputArea-editor {
+    display: table-row;
     margin-left: var(--jp-notebook-padding);
   }
 
   .jp-InputPrompt {
-    flex: 0 0 auto;
+    display: table-row;
     text-align: left;
   }
 }
