@@ -69,13 +69,11 @@ export class NotebookHelper {
    * @returns Action success status
    */
   async open(name: string): Promise<boolean> {
-    const isListed = await this.filebrowser.isFileListedInBrowser(name);
-    if (!isListed) {
-      return false;
-    }
-
-    await this.filebrowser.open(name);
-
+    await this.page.evaluate(async name => {
+      await window.jupyterapp.commands.execute('docmanager:open', {
+        path: name
+      });
+    }, name);
     return await this.isOpen(name);
   }
 
@@ -88,7 +86,11 @@ export class NotebookHelper {
    * @returns Action success status
    */
   async openByPath(filePath: string): Promise<boolean> {
-    await this.filebrowser.open(filePath);
+    await this.page.evaluate(async filePath => {
+      await window.jupyterapp.commands.execute('docmanager:open', {
+        path: filePath
+      });
+    }, filePath);
     const name = path.basename(filePath);
     return await this.isOpen(name);
   }
