@@ -69,6 +69,9 @@ test.describe('Table of Contents scrolling to heading', () => {
       .getByText('the last one')
       .click();
 
+    // Let the notebook finish scrolling
+    await page.waitForTimeout(100);
+
     expect(await nbPanel!.screenshot()).toMatchSnapshot(
       'scrolled-to-bottom-heading.png'
     );
