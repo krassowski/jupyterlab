@@ -664,6 +664,18 @@ export class StaticNotebook extends WindowedList {
         widget = this._createRawCell(cell as IRawCellModel);
     }
     widget.inViewportChanged.connect(this._onCellInViewportChanged, this);
+    widget.editorScrollRequested.connect(() => {
+      const cellIndex = this.widgets.findIndex(c => c === widget);
+      this.scrollToItem(cellIndex)
+        .then(() => {
+          void widget.ready.then(() => {
+            widget.editor?.focus();
+          });
+        })
+        .catch(reason => {
+          // no-op
+        });
+    });
     widget.addClass(NB_CELL_CLASS);
 
     ArrayExt.insert(this.cellsArray, index, widget);
@@ -1947,7 +1959,7 @@ export class Notebook extends StaticNotebook {
         break;
       case 'keydown':
         // This works because CodeMirror does not stop the event propagation
-        this._evtKeyDown(event as KeyboardEvent);
+        this._ensureFocus(true);
         break;
       case 'dblclick':
         this._evtDblClick(event as MouseEvent);
@@ -1974,35 +1986,6 @@ export class Notebook extends StaticNotebook {
         super.handleEvent(event);
         break;
     }
-  }
-
-  private _evtKeyDown(event: KeyboardEvent): void {
-    if (!event.target) {
-      return;
-    }
-    const inputPromise = Promise.race<boolean>([
-      new Promise(resolve => {
-        // TODO but this will not detect cursor movement in CM, will it?
-        // For that I need to listen to active cell signals.
-        //this._activeCell.editor.model.sharedModel.changed - but we do not want changes from other users to trigger scroll
-        //this._activeCell.editor.model.selections.changed.connect() - dodo make it "once" - but we do not want selection set by other user to trigger scroll
-        event.target!.addEventListener(
-          'beforeinput',
-          (_: InputEvent) => {
-            return resolve(true);
-          },
-          { once: true }
-        );
-      }),
-      new Promise(resolve => {
-        setTimeout(() => resolve(false), 50);
-      })
-    ]);
-    void inputPromise.then(hasInput => {
-      if (hasInput) {
-        this._ensureFocus(true);
-      }
-    });
   }
 
   /**
@@ -2241,7 +2224,7 @@ export class Notebook extends StaticNotebook {
     const activeCell = this.activeCell;
     if (this.mode === 'edit' && activeCell) {
       // Test for !== true to cover hasFocus is false and editor is not yet rendered.
-      if (activeCell.editor?.hasFocus() !== true || !activeCell.inViewport) {
+      if (activeCell.editor?.hasFocus() !== true) {
         if (activeCell.inViewport) {
           activeCell.editor?.focus();
         } else {

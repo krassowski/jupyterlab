@@ -209,6 +209,18 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
     this._inViewport = false;
     this.placeholder = options.placeholder ?? true;
 
+    this._editorExtensions.push(
+      EditorView.updateListener.of(viewUpdate => {
+        const view = viewUpdate.view;
+        // @ts-ignore
+        const viewState = view.viewState as ViewState;
+        const scrollTarget = viewState.scrollTarget;
+        if (scrollTarget) {
+          this._editorScrollRequested.emit();
+        }
+      })
+    );
+
     model.metadataChanged.connect(this.onMetadataChanged, this);
   }
 
@@ -553,6 +565,13 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
   }
 
   /**
+   * Signal emitted when cell editor requests scrolling.
+   */
+  get editorScrollRequested(): ISignal<Cell, void> {
+    return this._editorScrollRequested;
+  }
+
+  /**
    * Create children widgets.
    */
   protected initializeDOM(): void {
@@ -695,6 +714,7 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
   protected _displayChanged = new Signal<this, void>(this);
 
   private _editorConfig: Record<string, any> = {};
+  private _editorScrollRequested = new Signal<Cell, void>(this);
   private _editorExtensions: Extension[] = [];
   private _input: InputArea | null;
   private _inputHidden = false;
