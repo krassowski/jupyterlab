@@ -664,18 +664,6 @@ export class StaticNotebook extends WindowedList {
         widget = this._createRawCell(cell as IRawCellModel);
     }
     widget.inViewportChanged.connect(this._onCellInViewportChanged, this);
-    widget.editorScrollRequested.connect(() => {
-      const cellIndex = this.widgets.findIndex(c => c === widget);
-      this.scrollToItem(cellIndex)
-        .then(() => {
-          void widget.ready.then(() => {
-            widget.editor?.focus();
-          });
-        })
-        .catch(reason => {
-          // no-op
-        });
-    });
     widget.addClass(NB_CELL_CLASS);
 
     ArrayExt.insert(this.cellsArray, index, widget);
@@ -2143,6 +2131,20 @@ export class Notebook extends StaticNotebook {
       if (!cell.isDisposed) {
         cell.editor!.edgeRequested.connect(this._onEdgeRequest, this);
       }
+    });
+    cell.editorScrollRequested.connect(() => {
+      if (cell !== this.activeCell) {
+        return;
+      }
+      this.scrollToItem(this.activeCellIndex)
+        .then(() => {
+          void cell.ready.then(() => {
+            cell.editor?.focus();
+          });
+        })
+        .catch(reason => {
+          // no-op
+        });
     });
     // If the insertion happened above, increment the active cell
     // index, otherwise it stays the same.
