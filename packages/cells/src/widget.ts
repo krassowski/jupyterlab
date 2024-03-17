@@ -205,17 +205,10 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
     // For cells disable searching with CodeMirror search panel.
     this._editorConfig = { searchWithCM: false, ...options.editorConfig };
     this._editorExtensions = options.editorExtensions ?? [];
+    this._editorExtensions.push(this._scrollHandlerExtension);
     this._placeholder = true;
-    this._inViewport = false;
+    this._inViewport = null;
     this.placeholder = options.placeholder ?? true;
-
-    this._editorExtensions.push(
-      EditorView.scrollHandler.of(() => {
-        this._editorScrollRequested.emit();
-        // `false` means "proceed with the default CM scroll behaviour"
-        return false;
-      })
-    );
 
     model.metadataChanged.connect(this.onMetadataChanged, this);
   }
@@ -247,9 +240,14 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
 
   /**
    * Whether the cell is in viewport or not.
+   *
+   * #### Notes
+   * This property is managed by the windowed container which holds the cell.
+   * When a cell is not in a windowed container, it always returns `false`,
+   * but this may change in the future major version.
    */
   get inViewport(): boolean {
-    return this._inViewport;
+    return this._inViewport ?? false;
   }
   set inViewport(v: boolean) {
     if (this._inViewport !== v) {
@@ -563,7 +561,7 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
   /**
    * Signal emitted when cell editor requests scrolling.
    */
-  get editorScrollRequested(): ISignal<Cell, void> {
+  get editorScrollRequested(): ISignal<Cell, Cell.IEditorScrollRequest> {
     return this._editorScrollRequested;
   }
 
@@ -709,14 +707,44 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
   protected translator: ITranslator;
   protected _displayChanged = new Signal<this, void>(this);
 
+  /**
+   * Editor extension emitting `editorScrollRequested` signal on scroll.
+   *
+   * Scrolling within editor will be prevented when a cell is out out viewport.
+   * Windowed containers including cells should listen to the scroll request
+   * signal and invoke the `scrollEditor()` callback after scrolling the cell
+   * back into the view (and after updating the `inViewport` property).
+   */
+  private _scrollHandlerExtension = EditorView.scrollHandler.of(
+    (view, range, options) => {
+      // When cell is in the viewport we can scroll within the editor immediately.
+      // When cell is out of viewport, the windowed container needs to first
+      // scroll the cell into the viewport (otherwise CodeMirror is unable to
+      // calculate the correct scroll delta) before invoking scrolling in editor.
+      const inWindowedContainer = this._inViewport !== null;
+      const preventDefault = inWindowedContainer && !this._inViewport;
+      this._editorScrollRequested.emit({
+        defaultPrevented: preventDefault,
+        scrollEditor: () => {
+          view.dispatch({
+            effects: EditorView.scrollIntoView(range, options)
+          });
+        }
+      });
+      return preventDefault;
+    }
+  );
+
   private _editorConfig: Record<string, any> = {};
-  private _editorScrollRequested = new Signal<Cell, void>(this);
+  private _editorScrollRequested = new Signal<Cell, Cell.IEditorScrollRequest>(
+    this
+  );
   private _editorExtensions: Extension[] = [];
   private _input: InputArea | null;
   private _inputHidden = false;
   private _inputWrapper: Widget | null;
   private _inputPlaceholder: InputPlaceholder | null;
-  private _inViewport: boolean;
+  private _inViewport: boolean | null;
   private _inViewportChanged: Signal<Cell, boolean> = new Signal<Cell, boolean>(
     this
   );
@@ -918,6 +946,25 @@ export namespace Cell {
        */
       editorFactory: CodeEditor.Factory;
     }
+  }
+
+  /**
+   * Value of the signal emitted by cell on editor scroll request.
+   */
+  export interface IEditorScrollRequest {
+    /**
+     * A method which scrolls the editor, fulfilling the scroll request.
+     *
+     * ### Notes
+     * This method is intended for use by windowed containers that
+     * require the cell to be first scrolled into the viewport and
+     * to allow for proper scrolling of the editor.
+     */
+    scrollEditor: () => void;
+    /**
+     * Whether the default scrolling was prevented due to the cell being out of viewport.
+     */
+    defaultPrevented: boolean;
   }
 }
 

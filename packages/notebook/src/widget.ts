@@ -2132,14 +2132,31 @@ export class Notebook extends StaticNotebook {
         cell.editor!.edgeRequested.connect(this._onEdgeRequest, this);
       }
     });
-    cell.editorScrollRequested.connect(() => {
+    cell.editorScrollRequested.connect((_emitter, scrollRequest) => {
       if (cell !== this.activeCell) {
+        // Do nothing for cells other than the active cell
+        // to avoid scroll requests from editor extensions
+        // from stealing user focus (this may be revisited).
         return;
       }
+      if (!scrollRequest.defaultPrevented) {
+        // Nothing to do if cell editor was already scrolled.
+        return;
+      }
+      if (cell.inViewport) {
+        // If cell got scrolled to the viewport in the meantime,
+        // proceed with scrolling in the editor.
+        return scrollRequest.scrollEditor();
+      }
+      // If cell is not in the viewport and needs scrolling in editor,
+      // first scroll to the cell and then scroll within the editor.
       this.scrollToItem(this.activeCellIndex)
         .then(() => {
           void cell.ready.then(() => {
-            cell.editor?.focus();
+            if (!cell.editor) {
+              return;
+            }
+            scrollRequest.scrollEditor();
           });
         })
         .catch(reason => {
