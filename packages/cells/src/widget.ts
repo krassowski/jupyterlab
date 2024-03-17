@@ -210,14 +210,10 @@ export class Cell<T extends ICellModel = ICellModel> extends Widget {
     this.placeholder = options.placeholder ?? true;
 
     this._editorExtensions.push(
-      EditorView.updateListener.of(viewUpdate => {
-        const view = viewUpdate.view;
-        // @ts-ignore
-        const viewState = view.viewState as ViewState;
-        const scrollTarget = viewState.scrollTarget;
-        if (scrollTarget) {
-          this._editorScrollRequested.emit();
-        }
+      EditorView.scrollHandler.of(() => {
+        this._editorScrollRequested.emit();
+        // `false` means "proceed with the default CM scroll behaviour"
+        return false;
       })
     );
 
