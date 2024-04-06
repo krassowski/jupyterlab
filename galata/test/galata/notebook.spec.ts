@@ -127,6 +127,9 @@ test.describe('Notebook Tests', () => {
 
     const panel = await page.activity.getPanelLocator();
 
+    // Introduce a 1s delay to simulate slower performance of the file browser
+    await page.waitForTimeout(1000);
+
     // Note: this should be the only test taking the screenshot
     // of the full panel; all other tests should take snapshots
     // of individual notebook parts to avoid the need to review
