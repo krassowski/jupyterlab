@@ -4,6 +4,7 @@
     "noImplicitAny": true,
     "noEmitOnError": true,
     "noUnusedLocals": true,
+    "isolatedModules": true,
     "module": "commonjs",
     "moduleResolution": "node",
     "target": "ES2018",
