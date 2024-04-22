@@ -260,19 +260,13 @@ describe('@jupyterlab/apputils', () => {
         });
 
         await waitForDialog(node);
-        const input = node.querySelector(
-          'input[type="text"]'
-        ) as HTMLInputElement;
+        const input = node.querySelector('input[type="text"]')!;
 
         input.value = '123';
         input.dispatchEvent(new Event('input'));
 
-        const acceptButton = node.querySelector(
-          'button.jp-mod-accept'
-        ) as HTMLButtonElement;
-        const dismissButton = node.querySelector(
-          'button.jp-mod-reject'
-        ) as HTMLButtonElement;
+        const acceptButton = node.querySelector('button.jp-mod-accept')!;
+        const dismissButton = node.querySelector('button.jp-mod-reject')!;
         expect(acceptButton.disabled).toBe(true);
         expect(dismissButton.disabled).toBe(false);
 
@@ -292,19 +286,13 @@ describe('@jupyterlab/apputils', () => {
         });
 
         await waitForDialog(node);
-        const input = node.querySelector(
-          'input[type="text"]'
-        ) as HTMLInputElement;
+        const input = node.querySelector('input[type="text"]')!;
 
         input.value = 'abc';
         input.dispatchEvent(new Event('input'));
 
-        const acceptButton = node.querySelector(
-          'button.jp-mod-accept'
-        ) as HTMLButtonElement;
-        const dismissButton = node.querySelector(
-          'button.jp-mod-reject'
-        ) as HTMLButtonElement;
+        const acceptButton = node.querySelector('button.jp-mod-accept')!;
+        const dismissButton = node.querySelector('button.jp-mod-reject')!;
         expect(acceptButton.disabled).toBe(false);
         expect(dismissButton.disabled).toBe(false);
 

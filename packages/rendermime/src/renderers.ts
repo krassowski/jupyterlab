@@ -677,9 +677,9 @@ function splitShallowNode<T extends Node>(
   at: number
 ): { pre: T; post: T } {
   const pre = node.cloneNode() as T;
-  pre.textContent = node.textContent?.slice(0, at) as string;
+  pre.textContent = node.textContent?.slice(0, at)!;
   const post = node.cloneNode() as T;
-  post.textContent = node.textContent?.slice(at) as string;
+  post.textContent = node.textContent?.slice(at)!;
   return {
     pre,
     post
@@ -748,9 +748,7 @@ function* alignedNodes<T extends Node, U extends Node>(
         let { pre, post } = splitShallowNode(A.node, B.end - A.start);
         if (B.start < A.start) {
           // this node should not be yielded anywhere else, so ok to modify in-place
-          B.node.textContent = B.node.textContent?.slice(
-            A.start - B.start
-          ) as string;
+          B.node.textContent = B.node.textContent?.slice(A.start - B.start)!;
         }
         yield [pre, B.node];
         // Modify iteration result in-place:
@@ -761,9 +759,7 @@ function* alignedNodes<T extends Node, U extends Node>(
         let { pre, post } = splitShallowNode(B.node, A.end - B.start);
         if (A.start < B.start) {
           // this node should not be yielded anywhere else, so ok to modify in-place
-          A.node.textContent = A.node.textContent?.slice(
-            B.start - A.start
-          ) as string;
+          A.node.textContent = A.node.textContent?.slice(B.start - A.start)!;
         }
         yield [A.node, pre];
         // Modify iteration result in-place:

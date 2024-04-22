@@ -392,7 +392,7 @@ export class DebuggerService implements IDebugger, IDisposable {
       module => {
         return {
           name: module.name as string,
-          path: module.path as string
+          path: module.path!
         };
       }
     );

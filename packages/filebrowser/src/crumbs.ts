@@ -224,7 +224,7 @@ export class BreadCrumbs extends Widget {
         event.stopPropagation();
         return;
       }
-      node = node.parentElement as HTMLElement;
+      node = node.parentElement!;
     }
   }
 

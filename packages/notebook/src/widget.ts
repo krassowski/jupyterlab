@@ -2332,7 +2332,7 @@ export class Notebook extends StaticNotebook {
         if (id === queryId) {
           const element = this.node.querySelector(
             `h${heading.level}[id="${CSS.escape(id)}"]`
-          ) as HTMLElement;
+          ) as HTMLElement | undefined;
 
           return {
             cell,

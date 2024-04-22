@@ -98,7 +98,7 @@ describe('ImageViewer', () => {
     it('should set the content after the context is ready', async () => {
       await context.ready;
       MessageLoop.sendMessage(widget, Widget.Msg.UpdateRequest);
-      const img = widget.node.querySelector('img') as HTMLImageElement;
+      const img = widget.node.querySelector('img')!;
       expect(img.src).toContain(IMAGE.content);
     });
 
@@ -106,7 +106,7 @@ describe('ImageViewer', () => {
       await context.ready;
       context.model.fromString(OTHER);
       MessageLoop.sendMessage(widget, Widget.Msg.UpdateRequest);
-      const img = widget.node.querySelector('img') as HTMLImageElement;
+      const img = widget.node.querySelector('img')!;
       expect(img.src).toContain(OTHER);
     });
   });

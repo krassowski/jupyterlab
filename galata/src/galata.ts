@@ -726,8 +726,7 @@ export namespace galata {
       config: Record<string, JSONObject>
     ): Promise<void> {
       return page.route(Routes.config, (route, request) => {
-        const section = Routes.config.exec(request.url())?.groups
-          ?.section as string;
+        const section = Routes.config.exec(request.url())?.groups?.section!;
         switch (request.method()) {
           case 'GET':
             return route.fulfill({

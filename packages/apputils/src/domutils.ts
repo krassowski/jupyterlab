@@ -29,7 +29,7 @@ export namespace DOMUtils {
     parent: HTMLElement,
     className: string
   ): HTMLElement {
-    return parent.querySelector(`.${className}`) as HTMLElement;
+    return parent.querySelector(`.${className}`)!;
   }
 
   /**

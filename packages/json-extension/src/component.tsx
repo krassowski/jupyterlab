@@ -49,7 +49,7 @@ export class Component extends React.Component<IProps, IState> {
   timer: number = 0;
 
   componentDidMount(): void {
-    StyleModule.mount(document, jupyterHighlightStyle.module as StyleModule);
+    StyleModule.mount(document, jupyterHighlightStyle.module!);
   }
 
   handleChange = (event: React.ChangeEvent<HTMLInputElement>): void => {

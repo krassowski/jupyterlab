@@ -176,7 +176,7 @@ describe('@jupyterlab/notebook', () => {
         const source = 'thisisasamplestringwithnospaces';
         cell.model.sharedModel.setSource(source);
         const index = widget.activeCellIndex;
-        const editor = cell.editor as CodeEditor.IEditor;
+        const editor = cell.editor!;
         editor.setCursorPosition(editor.getPositionAt(10)!);
         NotebookActions.splitCell(widget);
         const cells = widget.model!.cells;
@@ -190,7 +190,7 @@ describe('@jupyterlab/notebook', () => {
         const cell = widget.activeCell!;
         const source = 'this\n\n   is a test';
         cell.model.sharedModel.setSource(source);
-        const editor = cell.editor as CodeEditor.IEditor;
+        const editor = cell.editor!;
         editor.setCursorPosition(editor.getPositionAt(4)!);
         NotebookActions.splitCell(widget);
         expect(widget.activeCell!.model.sharedModel.getSource()).toBe(
@@ -212,7 +212,7 @@ describe('@jupyterlab/notebook', () => {
         expect(cell.model.outputs).toHaveLength(2);
 
         // Split cell
-        const editor = cell.editor as CodeEditor.IEditor;
+        const editor = cell.editor!;
         editor.setCursorPosition(editor.getPositionAt(9)!);
         NotebookActions.splitCell(widget);
 

@@ -288,7 +288,7 @@ export class PluginList extends ReactWidget {
       // If this is the base case, check for matching title / description
       const subProps = props[value] as PartialJSONObject;
       if (!subProps) {
-        if (filter((props.title as string) ?? '')) {
+        if (filter(props.title! ?? '')) {
           return props.title;
         }
         if (filter(value)) {

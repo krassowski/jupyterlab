@@ -735,7 +735,7 @@ export namespace EditorExtensionRegistry {
               'Alt-A',
               'Escape',
               'Enter'
-            ].includes(binding.key as string);
+            ].includes(binding.key!);
           }),
           {
             key: 'Tab',

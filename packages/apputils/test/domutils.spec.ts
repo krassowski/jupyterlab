@@ -41,9 +41,7 @@ describe('@jupyterlab/apputils', () => {
       it.each(testCases)(
         'should work in light DOM: `%s` element should result in `%s`',
         (selector, expected) => {
-          const element = lightHost.querySelector(
-            selector as string
-          ) as HTMLElement;
+          const element = lightHost.querySelector(selector as string)!;
           element.focus();
 
           const result = DOMUtils.hasActiveEditableElement(div);
@@ -54,9 +52,7 @@ describe('@jupyterlab/apputils', () => {
       it.each(testCases)(
         'should work in shadow DOM: `%s` element should result in `%s`',
         (selector, expected) => {
-          const element = shadowRoot.querySelector(
-            selector as string
-          ) as HTMLElement;
+          const element = shadowRoot.querySelector(selector as string)!;
           element.focus();
 
           const result = DOMUtils.hasActiveEditableElement(div);

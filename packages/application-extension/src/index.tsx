@@ -1014,13 +1014,13 @@ const busy: JupyterFrontEndPlugin<void> = {
     status.busySignal.connect((_, isBusy) => {
       const favicon = document.querySelector(
         `link[rel="icon"]${isBusy ? '.idle.favicon' : '.busy.favicon'}`
-      ) as HTMLLinkElement;
+      ) as HTMLLinkElement | undefined;
       if (!favicon) {
         return;
       }
       const newFavicon = document.querySelector(
         `link${isBusy ? '.busy.favicon' : '.idle.favicon'}`
-      ) as HTMLLinkElement;
+      ) as HTMLLinkElement | undefined;
       if (!newFavicon) {
         return;
       }

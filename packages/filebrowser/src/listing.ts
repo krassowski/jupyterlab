@@ -2741,7 +2741,7 @@ export namespace DirListing {
       // Adds an aria-label to the checkbox element.
       const checkbox = checkboxWrapper?.querySelector(
         'input[type="checkbox"]'
-      ) as HTMLInputElement;
+      ) as HTMLInputElement | undefined;
 
       if (checkbox) {
         let ariaLabel: string;
@@ -2867,7 +2867,7 @@ namespace Private {
     edit: HTMLInputElement,
     original: string
   ): Promise<string> {
-    const parent = text.parentElement as HTMLElement;
+    const parent = text.parentElement!;
     parent.replaceChild(edit, text);
     edit.focus();
     const index = edit.value.lastIndexOf('.');

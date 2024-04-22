@@ -1169,9 +1169,7 @@ describe('completer/widget', () => {
         MessageLoop.sendMessage(widget, Widget.Msg.UpdateRequest);
         await framePromise();
         expect(widget.sizeCache).toEqual(expectedSizeNoDocs);
-        let panel = widget.node.querySelector(
-          `.${DOC_PANEL_CLASS}`
-        ) as HTMLElement;
+        let panel = widget.node.querySelector(`.${DOC_PANEL_CLASS}`)!;
         expect(panel.style.display).toBe('none');
 
         // documentation
@@ -1181,7 +1179,7 @@ describe('completer/widget', () => {
         MessageLoop.sendMessage(widget, Widget.Msg.UpdateRequest);
         await framePromise();
         expect(widget.sizeCache).toEqual(expectedSizeDocs);
-        panel = widget.node.querySelector(`.${DOC_PANEL_CLASS}`) as HTMLElement;
+        panel = widget.node.querySelector(`.${DOC_PANEL_CLASS}`)!;
         expect(panel.style.display).toBe('');
 
         // no documentation again
@@ -1189,7 +1187,7 @@ describe('completer/widget', () => {
         MessageLoop.sendMessage(widget, Widget.Msg.UpdateRequest);
         await framePromise();
         expect(widget.sizeCache).toEqual(expectedSizeNoDocs);
-        panel = widget.node.querySelector(`.${DOC_PANEL_CLASS}`) as HTMLElement;
+        panel = widget.node.querySelector(`.${DOC_PANEL_CLASS}`)!;
         expect(panel.style.display).toBe('none');
       });
 
