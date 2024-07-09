@@ -5,7 +5,7 @@
 **[Team](#team)** |
 **[Getting help](#getting-help)** |
 
-# [JupyterLab](https://jupyterlab.readthedocs.io)
+# [JupyterLab](https://jupyterlab.readthedocs.io) 
 
 [![PyPI version](https://badge.fury.io/py/jupyterlab.svg)](https://badge.fury.io/py/jupyterlab)
 [![Downloads](https://static.pepy.tech/badge/jupyterlab/month)](https://pepy.tech/project/jupyterlab)
