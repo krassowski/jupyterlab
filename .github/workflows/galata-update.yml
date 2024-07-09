@@ -58,6 +58,8 @@ jobs:
           echo "head_sha=$head_sha" >> $GITHUB_OUTPUT
 
       - name: Checkout the branch from the PR that triggered the job
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout ${{ github.event.issue.number }}
 
       - name: Validate the fetched branch HEAD revision
@@ -163,6 +165,8 @@ jobs:
 
       - name: Checkout the branch from the PR that triggered the job
         working-directory: core
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr checkout ${{ github.event.issue.number }}
 
       - name: Validate the fetched branch HEAD revision
