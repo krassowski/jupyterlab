@@ -198,7 +198,15 @@ test.describe('Notebook Search', () => {
     // Should reset the search to a clean state
     await page.locator('text=-/-').waitFor();
   });
+  test('Consecutive searches in the search box', async ({ page }) => {
+    await page.keyboard.press('Control+f');
 
+    await page.fill('[placeholder="Find"]', 'jupyter');
+    await page.keyboard.press('Control+f');
+    await page.locator('[placeholder="Find"]').pressSequentially('jupyter');
+
+    await expect(page.locator('[placeholder="Find"]')).toHaveValue('jupyter');
+  });
   test('Close with Escape', async ({ page }) => {
     // Open search box
     await page.keyboard.press('Control+f');
