@@ -3572,6 +3572,7 @@ namespace Private {
       const languageCode = (
         translator.languageCode ?? navigator.language
       ).replace('_', '-');
+      console.error(`translator.languageCode: ${translator.languageCode}; navigator.language: ${navigator.language}`);
       try {
         return a.name.localeCompare(b.name, languageCode, {
           numeric: true,
