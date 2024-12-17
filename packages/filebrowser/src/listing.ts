@@ -3569,6 +3569,7 @@ namespace Private {
      * Compare two items by their name using `translator.languageCode`, with fallback to `navigator.language`.
      */
     function compareByName(a: Contents.IModel, b: Contents.IModel) {
+      console.error(`translator.languageCode: ${translator.languageCode}; navigator.language: ${navigator.language}`);
       const languageCode = (
         translator.languageCode ?? navigator.language
       ).replace('_', '-');
