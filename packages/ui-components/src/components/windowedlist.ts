@@ -607,6 +607,11 @@ export abstract class WindowedListModel implements WindowedList.IModel {
     return false;
   }
 
+  get widgetSizes() {
+    // TODO: deep copy?
+    return this._widgetSizers;
+  }
+
   /**
    * Callback on list changes
    *

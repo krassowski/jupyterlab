@@ -211,14 +211,15 @@ export class StaticNotebook extends WindowedList<NotebookViewModel> {
     const windowingActive =
       (options.notebookConfig?.windowingMode ??
         StaticNotebook.defaultNotebookConfig.windowingMode) === 'full';
+    const model = new NotebookViewModel(cells, {
+      overscanCount:
+        options.notebookConfig?.overscanCount ??
+        StaticNotebook.defaultNotebookConfig.overscanCount,
+      windowingActive
+    });
     super({
-      model: new NotebookViewModel(cells, {
-        overscanCount:
-          options.notebookConfig?.overscanCount ??
-          StaticNotebook.defaultNotebookConfig.overscanCount,
-        windowingActive
-      }),
-      layout: new NotebookWindowedLayout(),
+      model,
+      layout: new NotebookWindowedLayout({ model }),
       renderer: options.renderer ?? WindowedList.defaultRenderer,
       scrollbar: false
     });
@@ -555,6 +556,9 @@ export class StaticNotebook extends WindowedList<NotebookViewModel> {
   protected onUpdateRequest(msg: Message): void {
     if (this.notebookConfig.windowingMode === 'defer') {
       void this._runOnIdleTime();
+    } else if (this.notebookConfig.windowingMode === 'full') {
+      void this._runOnIdleTime();
+      super.onUpdateRequest(msg);
     } else {
       super.onUpdateRequest(msg);
     }
@@ -855,7 +859,7 @@ export class StaticNotebook extends WindowedList<NotebookViewModel> {
             );
           },
           {
-            timeout: 3000
+            timeout: 5000
           }
         );
       }
@@ -921,12 +925,23 @@ export class StaticNotebook extends WindowedList<NotebookViewModel> {
         if (['defer', 'full'].includes(this.notebookConfig.windowingMode)) {
           await this._updateForDeferMode(cell, cellIdx);
           if (this.notebookConfig.windowingMode === 'full') {
+            console.log('measuring cell height', cellIdx);
             // We need to delay slightly the removal to let codemirror properly initialize
             requestAnimationFrame(() => {
-              this.viewModel.setEstimatedWidgetSize(
-                cell.model.id,
+              console.log(
+                'measured cell height',
+                cellIdx,
+                'it is',
                 cell.node.getBoundingClientRect().height
               );
+              const height = cell.node.getBoundingClientRect().height;
+              if (height != 0) {
+                // TODO: figure out why it sometimes is zero and fix it instead
+                this.viewModel.setEstimatedWidgetSize(
+                  cell.model.id,
+                  cell.node.getBoundingClientRect().height
+                );
+              }
               this.layout.removeWidget(cell);
             });
           }

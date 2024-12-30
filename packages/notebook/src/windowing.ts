@@ -85,12 +85,14 @@ export class NotebookViewModel extends WindowedListModel {
     if (size === null) {
       if (this.cellsEstimatedHeight.has(cellId)) {
         this.cellsEstimatedHeight.delete(cellId);
+        console.log(`Removing height for cell, ${cellId}`);
       }
     } else {
+      console.log(`Setting height for cell, ${cellId} to ${size}`);
       this.cellsEstimatedHeight.set(cellId, size);
       this._emitEstimatedHeightChanged.invoke().catch(error => {
         console.error(
-          'Fail to trigger an update following a estimated height update.',
+          'Failed to trigger an update following an estimated height update.',
           error
         );
       });
@@ -145,6 +147,12 @@ export class NotebookViewModel extends WindowedListModel {
 export class NotebookWindowedLayout extends WindowedLayout {
   private _header: Widget | null = null;
   private _footer: Widget | null = null;
+  private _model: NotebookViewModel;
+
+  constructor(options: { model: NotebookViewModel }) {
+    super();
+    this._model = options.model;
+  }
 
   /**
    * Notebook's header
@@ -226,6 +234,18 @@ export class NotebookWindowedLayout extends WindowedLayout {
     }
   }
 
+  insertWidget(index: number, widget: Widget): void {
+    const isSoftHidden = this._isSoftHidden(widget);
+    if (isSoftHidden) {
+      // Restore visibility for active, or previously active cell
+      this._toggleSoftVisibility(widget, true);
+      // This is needed in both insertWidget and attachWidget because
+      // the logic for measuring heights on idle cycles is using insertWidget
+      // and without it it measures it to be 0.
+    }
+    super.insertWidget(index, widget);
+  }
+
   /**
    * Attach a widget to the parent's DOM node.
    *
@@ -258,6 +278,8 @@ export class NotebookWindowedLayout extends WindowedLayout {
       // Restore visibility for active, or previously active cell
       this._toggleSoftVisibility(widget, true);
     }
+    const cellIndex = this._getCellIndex(widget);
+    // note: index refers to index of rendered widgets not all widgets.
     if (
       !wasPlaceholder &&
       widget instanceof CodeCell &&
@@ -265,6 +287,9 @@ export class NotebookWindowedLayout extends WindowedLayout {
     ) {
       // We don't remove code cells to preserve outputs internal state
       widget.node.style.display = '';
+
+      // Prevent scrollbar jumping if cell or outputs get resized when revealed
+      this._stablizeHeight(cellIndex, widget);
 
       // Reset cache
       this._topHiddenCodeCells = -1;
@@ -276,6 +301,9 @@ export class NotebookWindowedLayout extends WindowedLayout {
         parseInt(widget.dataset.windowedListIndex!, 10) + 1
       );
       let ref = this.parent!.viewportNode.children[siblingIndex];
+
+      // Prevent scrollbar jumping if cell or outputs get resized when revealed
+      this._stablizeHeight(cellIndex, widget);
 
       // Insert the widget's node before the sibling.
       this.parent!.viewportNode.insertBefore(widget.node, ref);
@@ -293,6 +321,100 @@ export class NotebookWindowedLayout extends WindowedLayout {
     (widget as Cell).inViewport = true;
   }
 
+  private _getCellIndex(widget: Widget) {
+    // TODO model has `.cells`, can we use the model to find the cell instead?
+    // this could also prevent exposing `.widgetSizes`
+    const model = this._model;
+    let index: number = -1;
+    const itemsList = model.itemsList;
+    if (!itemsList) {
+      throw Error('Empty items list when stabilizing height');
+    }
+    for (let i = 0; i < itemsList.length; i++) {
+      const item = itemsList.get!(i);
+      if ((widget as Cell).model === item) {
+        index = i;
+        break;
+      }
+    }
+    if (index === -1) {
+      throw Error('Item model not found');
+    }
+    return index;
+  }
+
+  private _stablizeHeight(cellIndex: number, widget: Widget) {
+    // Prevent resizing for a few hundred of milliseconds:
+    // - if the widget was detached, keep it's height pinned to the last height
+    // - if the widget is rendered for the first time, take the height from the first frame and pin to it
+
+    const model = this._model;
+    const sizer = model.widgetSizes[cellIndex];
+    if (sizer && sizer.measured) {
+      // The widget was previously measured, let's use that height
+      const height = sizer.size;
+      console.log(`Using measured height of ${height} for ${cellIndex}`);
+      this._pinHeight(widget, height);
+    } else {
+      //this._pinHeight(widget, sizer.size);
+      // The widget is rendered for the first time
+      // or we had not have idle time to measure its height in the background
+      const resizeObserver = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          const rect = entry.contentRect;
+          const height = rect.height;
+          if (height === 0) {
+            continue;
+          }
+          // this is necessary as otherwise the heights are not set right;
+          // but ideally some other place would be responsible for it and continue
+          // updating as the size changes; there probably is already a resize observer
+          // for widgets...
+          console.log(
+            `Storing height from resize observer ${height} for ${cellIndex}`
+          );
+          model.setWidgetSize([{ index: cellIndex, size: height }]);
+
+          // TODO re-pin or get max of estimated?
+          // this._pinHeight(widget, height);
+
+          // TODO: maybe instead of pinning an entire cell height we only need to only need to pin the outputs? Well, for rendered markdown cells (myst use case) this would not work that well.
+
+          resizeObserver.disconnect();
+          return;
+        }
+      });
+      resizeObserver.observe(widget.node);
+
+      const estimatedHeight = this._model.estimateWidgetSize(cellIndex);
+      console.log(`Using estimated height ${estimatedHeight} for ${cellIndex}`);
+      this._pinHeight(widget, estimatedHeight);
+    }
+  }
+
+  private _pinHeight(widget: Widget, height: number) {
+    if (height === 0) {
+      console.log('Not pinning as 0 is useless');
+      return;
+    }
+    widget.node.style.height = height + 'px';
+    widget.node.style.transition = '';
+    // @ts-ignore
+    widget.node.style.interpolateSize = 'allow-keywords';
+    widget.node.style.overflow = 'hidden';
+    this._pinnedHeightWidgets.add(widget);
+    this._clearHeightPins.invoke();
+  }
+  private _pinnedHeightWidgets = new Set<Widget>();
+
+  private _clearHeightPins = new Debouncer(() => {
+    for (const widget of this._pinnedHeightWidgets) {
+      widget.node.style.transition = 'height 0.1s linear';
+      widget.node.style.height = 'auto';
+      widget.node.style.overflow = '';
+    }
+    this._pinnedHeightWidgets.clear();
+  }, 800);
   /**
    * Detach a widget from the parent's DOM node.
    *
