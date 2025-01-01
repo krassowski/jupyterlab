@@ -219,7 +219,13 @@ export class StaticNotebook extends WindowedList<NotebookViewModel> {
     });
     super({
       model,
-      layout: new NotebookWindowedLayout({ model }),
+      layout: new NotebookWindowedLayout({
+        model,
+        cellHeightStabilization:
+          options.notebookConfig?.cellHeightStabilization,
+        assumeHeightStabilityAfter:
+          options.notebookConfig?.assumeHeightStabilityAfter
+      }),
       renderer: options.renderer ?? WindowedList.defaultRenderer,
       scrollbar: false
     });
@@ -1153,6 +1159,18 @@ export namespace StaticNotebook {
    */
   export interface INotebookConfig {
     /**
+     * If cell height stabilization is enabled, how many milliseconds should pass since the
+     * last height measurement for the stabilization algorithm to be allowed to pin the cell height.
+     */
+    assumeHeightStabilityAfter?: number;
+
+    /**
+     * Whether to pin height of the cells when scrolling to stabilize viewport (prevent jitter),
+     * and for how long since the last scroll event (in milliseconds).
+     */
+    cellHeightStabilization?: number;
+
+    /**
      * The default type for new notebook cells.
      */
     defaultCell: nbformat.CellType;
@@ -1254,6 +1272,8 @@ export namespace StaticNotebook {
    * Default configuration options for notebooks.
    */
   export const defaultNotebookConfig: INotebookConfig = {
+    assumeHeightStabilityAfter: 1000,
+    cellHeightStabilization: 750,
     enableKernelInitNotification: false,
     showHiddenCellsButton: true,
     scrollPastEnd: true,

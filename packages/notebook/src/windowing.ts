@@ -142,6 +142,31 @@ export class NotebookViewModel extends WindowedListModel {
 }
 
 /**
+ * The namespace for the `NotebookWindowedLayout` class statics.
+ */
+export namespace NotebookWindowedLayout {
+  /**
+   * An options object for initializing notebook windowed layout.
+   */
+  export interface IOptions {
+    /**
+     * Notebook view model.
+     */
+    model: NotebookViewModel;
+    /**
+     * If cell height stabilization is enabled, how many milliseconds should pass since the
+     * last height measurement for the stabilization algorithm to be allowed to pin the cell height.
+     */
+    assumeHeightStabilityAfter?: number;
+    /**
+     * Whether to pin height of the cells when scrolling to stabilize viewport (prevent jitter),
+     * and for how long since the last scroll event (in milliseconds).
+     */
+    cellHeightStabilization?: number;
+  }
+}
+
+/**
  * Windowed list layout for the notebook.
  */
 export class NotebookWindowedLayout extends WindowedLayout {
@@ -149,9 +174,20 @@ export class NotebookWindowedLayout extends WindowedLayout {
   private _footer: Widget | null = null;
   private _model: NotebookViewModel;
 
-  constructor(options: { model: NotebookViewModel }) {
+  constructor(options: NotebookWindowedLayout.IOptions) {
     super();
     this._model = options.model;
+    this._assumeHeightStabilityAfter = options.assumeHeightStabilityAfter ?? 0;
+    this._cellHeightStabilization = options.cellHeightStabilization ?? 0;
+
+    this._clearHeightPins = new Debouncer(() => {
+      for (const widget of this._pinnedHeightWidgets) {
+        widget.node.style.transition = 'height 0.1s linear';
+        widget.node.style.height = 'auto';
+        widget.node.style.overflow = '';
+      }
+      this._pinnedHeightWidgets.clear();
+    }, this._cellHeightStabilization);
   }
 
   /**
@@ -323,7 +359,7 @@ export class NotebookWindowedLayout extends WindowedLayout {
 
   private _getCellIndex(widget: Widget) {
     // TODO model has `.cells`, can we use the model to find the cell instead?
-    // this could also prevent exposing `.widgetSizes`
+    // maybe this could also prevent exposing `.widgetSizes`?
     const model = this._model;
     let index: number = -1;
     const itemsList = model.itemsList;
@@ -343,78 +379,32 @@ export class NotebookWindowedLayout extends WindowedLayout {
     return index;
   }
 
+  /**
+   * Prevent cell resizing for a short time to stabilize scrolling.
+   *
+   * Stabilization is only applied to cells with measured and stable height.
+   */
   private _stablizeHeight(cellIndex: number, widget: Widget) {
-    // Prevent resizing for a few hundred of milliseconds:
-    // - if the widget was detached, keep it's height pinned to the last height
-    // - if the widget is rendered for the first time, take the height from the first frame and pin to it
-
-    const model = this._model;
-    const sizer = model.widgetSizes[cellIndex];
-    if (sizer && sizer.measured) {
-      // The widget was previously measured, let's use that height
-      const height = sizer.size;
-      console.log(`Using measured height of ${height} for ${cellIndex}`);
-      this._pinHeight(widget, height);
-    } else {
-      //this._pinHeight(widget, sizer.size);
-      // The widget is rendered for the first time
-      // or we had not have idle time to measure its height in the background
-      const resizeObserver = new ResizeObserver(entries => {
-        for (const entry of entries) {
-          const rect = entry.contentRect;
-          const height = rect.height;
-          if (height === 0) {
-            continue;
-          }
-          // this is necessary as otherwise the heights are not set right;
-          // but ideally some other place would be responsible for it and continue
-          // updating as the size changes; there probably is already a resize observer
-          // for widgets...
-          console.log(
-            `Storing height from resize observer ${height} for ${cellIndex}`
-          );
-          model.setWidgetSize([{ index: cellIndex, size: height }]);
-
-          // TODO re-pin or get max of estimated?
-          // this._pinHeight(widget, height);
-
-          // TODO: maybe instead of pinning an entire cell height we only need to only need to pin the outputs? Well, for rendered markdown cells (myst use case) this would not work that well.
-
-          resizeObserver.disconnect();
-          return;
-        }
-      });
-      resizeObserver.observe(widget.node);
-
-      const estimatedHeight = this._model.estimateWidgetSize(cellIndex);
-      console.log(`Using estimated height ${estimatedHeight} for ${cellIndex}`);
-      this._pinHeight(widget, estimatedHeight);
-    }
-  }
-
-  private _pinHeight(widget: Widget, height: number) {
-    if (height === 0) {
-      console.log('Not pinning as 0 is useless');
+    if (this._cellHeightStabilization === 0) {
       return;
     }
-    widget.node.style.height = height + 'px';
-    widget.node.style.transition = '';
-    // @ts-ignore
-    widget.node.style.interpolateSize = 'allow-keywords';
-    widget.node.style.overflow = 'hidden';
-    this._pinnedHeightWidgets.add(widget);
-    this._clearHeightPins.invoke();
-  }
-  private _pinnedHeightWidgets = new Set<Widget>();
+    const model = this._model;
+    const sizer = model.widgetSizes[cellIndex];
+    if (
+      sizer &&
+      sizer.measured &&
+      sizer.measuredAt &&
+      Date.now() - sizer.measuredAt > this._assumeHeightStabilityAfter
+    ) {
+      // The widget was previously measured, let's use that height
 
-  private _clearHeightPins = new Debouncer(() => {
-    for (const widget of this._pinnedHeightWidgets) {
-      widget.node.style.transition = 'height 0.1s linear';
-      widget.node.style.height = 'auto';
-      widget.node.style.overflow = '';
+      // BUT this height might be badly off, .e.g too small if it was measured just after initial render
+      const height = sizer.size;
+      console.log(`Using measured height of ${height} for ${cellIndex} xxxx`);
+      this._pinHeight(widget, height);
     }
-    this._pinnedHeightWidgets.clear();
-  }, 800);
+  }
+
   /**
    * Detach a widget from the parent's DOM node.
    *
@@ -627,6 +617,21 @@ export class NotebookWindowedLayout extends WindowedLayout {
     }
   }
 
+  private _pinHeight(widget: Widget, height: number) {
+    widget.node.style.height = height + 'px';
+    widget.node.style.transition = '';
+    // @ts-ignore
+    widget.node.style.interpolateSize = 'allow-keywords';
+    widget.node.style.overflow = 'hidden';
+
+    this._pinnedHeightWidgets.add(widget);
+    this._clearHeightPins.invoke();
+  }
+
+  private _assumeHeightStabilityAfter: number;
+  private _cellHeightStabilization: number;
+  private _clearHeightPins: Debouncer;
   private _willBeRemoved: Widget | null = null;
+  private _pinnedHeightWidgets = new Set<Widget>();
   private _topHiddenCodeCells: number = -1;
 }
