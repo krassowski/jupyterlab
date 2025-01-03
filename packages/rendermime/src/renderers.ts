@@ -836,70 +836,183 @@ function renderTextual(
   const pre = document.createElement('pre');
   pre.innerHTML = content;
 
-  const preTextContent = pre.textContent;
+  const fullPreTextContent = pre.textContent;
 
-  const cacheStoreOptions = [];
-  if (autoLinkOptions.checkWeb) {
-    cacheStoreOptions.push('web');
-  }
-  if (autoLinkOptions.checkPaths) {
-    cacheStoreOptions.push('paths');
-  }
-  const cacheStoreKey = cacheStoreOptions.join('-');
-  let cacheStore = Private.autoLinkCache.get(cacheStoreKey);
-  if (!cacheStore) {
-    cacheStore = new WeakMap();
-    Private.autoLinkCache.set(cacheStoreKey, cacheStore);
+  if (!fullPreTextContent) {
+    // Short-circuit if there is not content to auto-link
+    host.appendChild(pre);
+    return;
   }
 
-  let ret: HTMLPreElement;
-  if (preTextContent) {
-    // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
+  // We want to only manipulate DOM once per animation frame whether
+  // the autolink is enabled or not, because a stream can also choke
+  // rendering pipeline even if autolink is disabled. This acts as
+  // an effective debouncer which matches the refresh rate of the
+  // screen.
+  Private.abortRendering(host);
+
+  // Stop rendering after 10 minutes (assuming 60 Hz)
+  const maxIterations = 60 * 60 * 10;
+  let iteration = 0;
+
+  const renderFrame = (timestamp: number) => {
+    // Skip rendering in this frame if the output is not visible was (temporarily) removed from DOM
+    // - is hidden due to scrolling away in full windowed notebook mode) - TODO
+    // Note: cannot use checkVisibility as this triggers layout (unless we only use setTimeout to delay trashing?)
+    if (!host.isConnected || !Private.canRenderInFrame(timestamp, host)) {
+      // || !host.checkVisibility()) {
+      Private.scheduleRendering(host, renderFrame);
+      return;
+    }
+
+    const start = performance.now();
+
+    Private.beginRendering(host);
+    const shouldAutoLink = sanitizer.getAutolink?.() ?? true;
+
+    if (!shouldAutoLink) {
+      host.replaceChildren(pre.cloneNode(true));
+      // host.replaceChildren(pre);
+      //TODO TEST, is cloning needed
+      return;
+    }
+    const cacheStore = Private.getCacheStore(autoLinkOptions);
+    const cache = cacheStore.get(host);
+    const applicableCache = getApplicableLinkCache(cache, fullPreTextContent);
+    const hasCache = cache && applicableCache;
+    if (iteration > 0 && !hasCache) {
+      throw Error('Each iteration should set cache!');
+    }
+
+    let alreadyAutoLinked = hasCache ? applicableCache.processedText : '';
+    let toBeAutoLinked = hasCache
+      ? applicableCache.addedText
+      : fullPreTextContent;
+    let moreWorkToBeDone = true;
+
+    const budget = 13;
     let linkedNodes: (HTMLAnchorElement | Text)[];
-    if (sanitizer.getAutolink?.() ?? true) {
-      const cache = getApplicableLinkCache(
-        cacheStore.get(host),
-        preTextContent
-      );
-      if (cache) {
-        const { cachedNodes: fromCache, addedText } = cache;
-        const newAdditions = autolink(addedText, autoLinkOptions);
-        const lastInCache = fromCache[fromCache.length - 1];
-        const firstNewNode = newAdditions[0];
+    let elapsed: number;
+    let newRequest: number | undefined;
 
-        if (lastInCache instanceof Text && firstNewNode instanceof Text) {
-          const joiningNode = lastInCache;
-          joiningNode.data += firstNewNode.data;
-          linkedNodes = [
-            ...fromCache.slice(0, -1),
-            joiningNode,
-            ...newAdditions.slice(1)
-          ];
-        } else {
-          linkedNodes = [...fromCache, ...newAdditions];
-        }
+    do {
+      // find first space (or equivalent) which follows a non-space character.
+      const breakIndex = toBeAutoLinked.search(/(?<=\S)\s/);
+
+      const before =
+        breakIndex === -1
+          ? toBeAutoLinked
+          : toBeAutoLinked.slice(0, breakIndex);
+      const after = breakIndex === -1 ? '' : toBeAutoLinked.slice(breakIndex);
+      const fragment = alreadyAutoLinked + before;
+      linkedNodes = incrementalAutoLink(
+        cacheStore,
+        options,
+        autoLinkOptions,
+        fragment
+      );
+      alreadyAutoLinked = fragment;
+      toBeAutoLinked = after;
+      moreWorkToBeDone = toBeAutoLinked != '';
+      elapsed = performance.now() - start;
+      newRequest = Private.hasNewRenderingRequest(host);
+      //console.debug({elapsed, moreWorkToBeDone, fragment, breakIndex, iteration, newRequest});
+    } while (elapsed < budget && moreWorkToBeDone && !newRequest);
+
+    // TODO: because keepExisting=False in renderModel, the pre node gets
+    // cleared as new data comes in, but there is a substantial delay before it reappears;
+    // how to ensure it gets rendered promptly?
+    if (linkedNodes.length === 1 && linkedNodes[0] instanceof Text) {
+      if (host.childNodes.length === 1 && host.childNodes[0] === pre) {
+        // no-op
       } else {
-        linkedNodes = autolink(preTextContent, autoLinkOptions);
+        setTimeout(() => {
+          //console.log(pre)
+          // Do not perform DOM manipulation within requestAnimationFrame callback
+          // as this would result in layout trashing, instead push it to just after
+          host.replaceChildren(pre); //.cloneNode(true)); //);
+        });
       }
+    } else {
+      // Persist nodes in cache by cloning them
       cacheStore.set(host, {
-        preTextContent,
+        preTextContent: alreadyAutoLinked,
         // Clone the nodes before storing them in the cache in case if another component
         // attempts to modify (e.g. dispose of) them - which is the case for search highlights!
         linkedNodes: linkedNodes.map(
           node => node.cloneNode(true) as HTMLAnchorElement | Text
         )
       });
-    } else {
-      linkedNodes = [document.createTextNode(content)];
+
+      const preNodes = Array.from(pre.cloneNode(true).childNodes) as (
+        | Text
+        | HTMLSpanElement
+      )[];
+      const node = mergeNodes(preNodes, [
+        ...linkedNodes,
+        document.createTextNode(toBeAutoLinked)
+      ]);
+      //console.warn({status: 'rendering', toBeAutoLinked, node, preNodes, linkedNodes})
+      setTimeout(() => {
+        // Do not perform DOM manipulation within requestAnimationFrame callback
+        // as this would result in layout trashing, instead push it to just after
+        host.replaceChildren(node);
+      });
     }
 
-    const preNodes = Array.from(pre.childNodes) as (Text | HTMLSpanElement)[];
-    ret = mergeNodes(preNodes, linkedNodes);
-  } else {
-    ret = document.createElement('pre');
-  }
+    // Continue unless:
+    // - no more text needs to be linkified,
+    // - new stream part was received (and new request sent),
+    // - maximum iterations limit was exceeded,
+    if (moreWorkToBeDone && !newRequest && iteration < maxIterations) {
+      iteration += 1;
+      Private.scheduleRendering(host, renderFrame);
+    }
+  };
 
-  host.appendChild(ret);
+  Private.scheduleRendering(host, renderFrame);
+}
+
+function incrementalAutoLink(
+  cacheStore: WeakMap<HTMLElement, IAutoLinkCacheEntry>,
+  options: renderText.IRenderOptions,
+  autoLinkOptions: IAutoLinkOptions,
+  preFragmentToAutoLink: string
+): (HTMLAnchorElement | Text)[] {
+  const { host } = options;
+
+  // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
+  let linkedNodes: (HTMLAnchorElement | Text)[];
+
+  const cache = getApplicableLinkCache(
+    cacheStore.get(host),
+    preFragmentToAutoLink
+  );
+  if (cache) {
+    const { cachedNodes: fromCache, addedText } = cache;
+    const newAdditions = autolink(addedText, autoLinkOptions);
+    const lastInCache = fromCache[fromCache.length - 1];
+    const firstNewNode = newAdditions[0];
+
+    if (lastInCache instanceof Text && firstNewNode instanceof Text) {
+      const joiningNode = lastInCache;
+      joiningNode.data += firstNewNode.data;
+      linkedNodes = [
+        ...fromCache.slice(0, -1),
+        joiningNode,
+        ...newAdditions.slice(1)
+      ];
+    } else {
+      linkedNodes = [...fromCache, ...newAdditions];
+    }
+  } else {
+    linkedNodes = autolink(preFragmentToAutoLink, autoLinkOptions);
+  }
+  cacheStore.set(host, {
+    preTextContent: preFragmentToAutoLink,
+    linkedNodes
+  });
+  return linkedNodes;
 }
 
 /**
@@ -947,6 +1060,7 @@ function getApplicableLinkCache(
 ): {
   cachedNodes: IAutoLinkCacheEntry['linkedNodes'];
   addedText: string;
+  processedText: string;
 } | null {
   if (!cachedResult) {
     return null;
@@ -960,6 +1074,7 @@ function getApplicableLinkCache(
   let cachedNodes = cachedResult.linkedNodes;
   const lastCachedNode =
     cachedResult.linkedNodes[cachedResult.linkedNodes.length - 1];
+  let processedText = cachedResult.preTextContent;
 
   // Only use cached nodes if:
   // - the last cached node is a text node
@@ -980,6 +1095,12 @@ function getApplicableLinkCache(
     // we need to pass `bbb www.` + `two.com` through linkify again.
     cachedNodes = cachedNodes.slice(0, -1);
     addedText = lastCachedNode.textContent + addedText;
+    processedText = processedText.slice(0, -lastCachedNode.textContent!.length);
+  } else if (lastCachedNode instanceof HTMLAnchorElement) {
+    // TODO: why did I not include this condition before?
+    cachedNodes = cachedNodes.slice(0, -1);
+    addedText = lastCachedNode.textContent + addedText;
+    processedText = processedText.slice(0, -lastCachedNode.textContent!.length);
   } else {
     return null;
   }
@@ -990,7 +1111,8 @@ function getApplicableLinkCache(
   }
   return {
     cachedNodes,
-    addedText
+    addedText,
+    processedText
   };
 }
 
@@ -1128,13 +1250,103 @@ export namespace renderError {
  * The namespace for module implementation details.
  */
 namespace Private {
+  let lastFrameTimestamp: number | null = null;
+
+  /**
+   * Check if frame rendering can proceed in frame identified by timestamp
+   * from the first `requestAnimationFrame` callback argument. This argument
+   * is guaranteed to be the same for multiple requests executed on the same
+   * frame, which allows to limit number of animations to one per frame,
+   * and in turn avoids choking the rendering pipeline by creating tasks
+   * longer than the delta between frames.
+   *
+   * Also, we want to distribute the rendering between outputs to avoid
+   * displaying blank space while waiting for the previous output to be fully rendered.
+   */
+  export function canRenderInFrame(
+    timestamp: number,
+    host: HTMLElement
+  ): boolean {
+    if (lastFrameTimestamp !== timestamp) {
+      // progress queue
+      const last = renderQueue.shift();
+      if (last) {
+        renderQueue.push(last);
+      } else {
+        throw Error('Render queue cannot be empty here!');
+      }
+      lastFrameTimestamp = timestamp;
+    }
+    // check queue
+    if (renderQueue[0] === host) {
+      return true;
+    }
+    return false;
+  }
+
+  const renderQueue = new Array<HTMLElement>();
+  const frameRequests = new WeakMap<HTMLElement, number>();
+
+  export function abortRendering(host: HTMLElement) {
+    const previousRequest = frameRequests.get(host);
+    if (previousRequest) {
+      window.cancelAnimationFrame(previousRequest);
+    }
+    //removeFromQueue(host);
+  }
+
+  export function scheduleRendering(
+    host: HTMLElement,
+    render: (timetamp: number) => void
+  ) {
+    // push at the end of the queue
+    if (!renderQueue.includes(host)) {
+      renderQueue.push(host);
+    }
+    const thisRequest = window.requestAnimationFrame(render);
+    frameRequests.set(host, thisRequest);
+  }
+
+  export function beginRendering(host: HTMLElement) {
+    frameRequests.delete(host);
+    removeFromQueue(host);
+  }
+
+  function removeFromQueue(host: HTMLElement) {
+    const index = renderQueue.indexOf(host);
+    if (index !== -1) {
+      renderQueue.splice(index, 1);
+    }
+  }
+
+  export function hasNewRenderingRequest(host: HTMLElement) {
+    return frameRequests.get(host);
+  }
+
   /**
    * Cache for auto-linking results to provide better performance when streaming outputs.
    */
-  export const autoLinkCache = new Map<
+  const autoLinkCache = new Map<
     string,
     WeakMap<HTMLElement, IAutoLinkCacheEntry>
   >();
+
+  export function getCacheStore(autoLinkOptions: IAutoLinkOptions) {
+    const cacheStoreOptions = [];
+    if (autoLinkOptions.checkWeb) {
+      cacheStoreOptions.push('web');
+    }
+    if (autoLinkOptions.checkPaths) {
+      cacheStoreOptions.push('paths');
+    }
+    const cacheStoreKey = cacheStoreOptions.join('-');
+    let cacheStore = autoLinkCache.get(cacheStoreKey);
+    if (!cacheStore) {
+      cacheStore = new WeakMap();
+      autoLinkCache.set(cacheStoreKey, cacheStore);
+    }
+    return cacheStore;
+  }
 
   /**
    * Eval the script tags contained in a host populated by `innerHTML`.
