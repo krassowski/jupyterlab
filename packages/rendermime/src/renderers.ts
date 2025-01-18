@@ -818,9 +818,16 @@ function renderTextual(
   options: renderText.IRenderOptions,
   autoLinkOptions: IAutoLinkOptions
 ): void {
+  // TODO: now frequent calls to renderTextual are the bottleneck if server is streaming fast
+  // as each call takes 1.4ms; we could accumulate calls across 5ms intervals or such and improve
+  // performance - at least for rendering errors when using native sanitizer
+
   // Unpack the options.
   const { host, sanitizer, source } = options;
 
+  // TODO: push this into the rendering pipeline too?
+
+  // TODO: can we remove regex here and use indexOf or contains instead
   const ansiPrefixRe = /\x1b/; // eslint-disable-line no-control-regex
   const hasAnsiPrefix = ansiPrefixRe.test(source);
 
@@ -839,10 +846,13 @@ function renderTextual(
   const fullPreTextContent = pre.textContent;
 
   if (!fullPreTextContent) {
-    // Short-circuit if there is not content to auto-link
-    host.appendChild(pre);
+    // Short-circuit if there is no content to auto-link
+    host.replaceChildren(pre);
     return;
   }
+
+  /// TODO use layout containment to avoid high computation cost when autolinking?
+  // tried that - did not help much
 
   // We want to only manipulate DOM once per animation frame whether
   // the autolink is enabled or not, because a stream can also choke
@@ -888,9 +898,9 @@ function renderTextual(
     let toBeAutoLinked = hasCache
       ? applicableCache.addedText
       : fullPreTextContent;
-    let moreWorkToBeDone = true;
+    let moreWorkToBeDone: boolean;
 
-    const budget = 13;
+    const budget = 10;
     let linkedNodes: (HTMLAnchorElement | Text)[];
     let elapsed: number;
     let newRequest: number | undefined;
@@ -926,12 +936,8 @@ function renderTextual(
       if (host.childNodes.length === 1 && host.childNodes[0] === pre) {
         // no-op
       } else {
-        setTimeout(() => {
-          //console.log(pre)
-          // Do not perform DOM manipulation within requestAnimationFrame callback
-          // as this would result in layout trashing, instead push it to just after
-          host.replaceChildren(pre); //.cloneNode(true)); //);
-        });
+        // todo clone?
+        host.replaceChildren(pre);
       }
     } else {
       // Persist nodes in cache by cloning them
@@ -953,11 +959,69 @@ function renderTextual(
         document.createTextNode(toBeAutoLinked)
       ]);
       //console.warn({status: 'rendering', toBeAutoLinked, node, preNodes, linkedNodes})
-      setTimeout(() => {
-        // Do not perform DOM manipulation within requestAnimationFrame callback
-        // as this would result in layout trashing, instead push it to just after
+      // setTimeout(() => {
+      // Do not perform DOM manipulation within requestAnimationFrame callback
+      // as this would result in layout trashing, instead push it to just after
+
+      // TODO: preserve selection?
+      // do not replace all, just the changed
+      /**
+       * Find nodes in `node` which do not have the same content or type and thus need to be appended.
+       */
+      function nodesToAppend(host: HTMLElement, node: HTMLPreElement) {
+        const oldPre = host.childNodes[0];
+        if (!oldPre) {
+          return;
+        }
+        if (!(oldPre instanceof HTMLPreElement)) {
+          return;
+        }
+        const newNodes = node.childNodes;
+        const oldNodes = oldPre.childNodes;
+        let lastSharedNode: number = -1;
+
+        if (newNodes.length < oldNodes.length) {
+          return;
+        }
+
+        for (let i = 0; i < oldNodes.length; i++) {
+          //if (newNodes.length <= i) {
+          //  break;
+          //}
+          const oldChild = oldNodes[i];
+          const newChild = newNodes[i];
+          if (
+            oldChild.nodeType === newChild.nodeType &&
+            oldChild.textContent === newChild.textContent
+            //&& child.nodeValue === newChild.nodeValue - this does not work for anchors well
+          ) {
+            lastSharedNode = i;
+          } else {
+            break;
+          }
+        }
+        if (lastSharedNode === -1) {
+          return;
+        }
+        return {
+          parent: oldPre,
+          toDelete: [...oldNodes].slice(lastSharedNode),
+          toAppend: [...newNodes].slice(lastSharedNode)
+        };
+      }
+
+      const result = nodesToAppend(host, node);
+      if (result) {
+        for (const element of result.toDelete) {
+          result.parent.removeChild(element);
+        }
+        result.parent.append(...result.toAppend);
+      } else {
         host.replaceChildren(node);
-      });
+      }
+
+      //host.replaceChildren(node);
+      //}, 16);
     }
 
     // Continue unless:
