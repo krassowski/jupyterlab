@@ -810,6 +810,16 @@ function nativeSanitize(source: string): string {
 }
 
 /**
+ * Enum used exclusively for static analysis to ensure that each
+ * branch in `renderFrame` leads to explicit rendering decision.
+ */
+enum RenderingResult {
+  stop,
+  delay,
+  continue
+}
+
+/**
  * Render the textual representation into a host node.
  *
  * Implements the shared logic for `renderText` and `renderError`.
@@ -835,7 +845,7 @@ function renderTextual(
   let fullPreTextContent: string | null = null;
   let pre: HTMLPreElement;
 
-  let isVisible = true;
+  let isVisible = false;
 
   // We will use the observer to pause rendering if the element
   // is not visible; this is helpful when opening a notebook
@@ -844,27 +854,51 @@ function renderTextual(
   if (typeof IntersectionObserver !== 'undefined') {
     observer = new IntersectionObserver(
       entries => {
-        isVisible = entries[0].isIntersecting;
+        for (const entry of entries) {
+          isVisible = entry.isIntersecting;
+          if (isVisible) {
+            wasEverVisible = true;
+          }
+        }
       },
       { threshold: 0 }
     );
     observer.observe(host);
   }
+  let wasEverVisible = false;
 
   const stopRendering = () => {
     // Remove the host from rendering queue
     Private.removeFromQueue(host);
     // Disconnect the intersection observer.
     observer?.disconnect();
+    return RenderingResult.stop;
   };
 
-  const renderFrame = (timestamp: number) => {
-    if (!host.isConnected) {
+  const continueRendering = () => {
+    iteration += 1;
+    Private.scheduleRendering(host, renderFrame);
+    return RenderingResult.continue;
+  };
+
+  const delayRendering = () => {
+    Private.scheduleRendering(host, renderFrame);
+    return RenderingResult.delay;
+  };
+
+  const renderFrame = (timestamp: number): RenderingResult => {
+    if (!host.isConnected && wasEverVisible) {
       // Abort rendering if host is no longer in DOM; note, that even in
       // full windowing notebook mode the output nodes are never removed,
       // but instead the cell gets hidden (usually with `display: none`
       // or in case of the active cell - opacity tricks).
-      return stopRendering();
+      if (!wasEverVisible) {
+        // If the host was never visible, it means it was not yet
+        // attached when loading notebook for the first time.
+        return delayRendering();
+      } else {
+        return stopRendering();
+      }
     }
 
     // Delay rendering of this output if the output is not visible due to
@@ -874,8 +908,7 @@ function renderTextual(
     // before we appended the new nodes from the stream, which leads to layout
     // trashing. Instead we use intersection observer
     if (!isVisible || !Private.canRenderInFrame(timestamp, host)) {
-      Private.scheduleRendering(host, renderFrame);
-      return;
+      return delayRendering();
     }
 
     const start = performance.now();
@@ -992,8 +1025,7 @@ function renderTextual(
     // - new stream part was received (and new request sent),
     // - maximum iterations limit was exceeded,
     if (moreWorkToBeDone && !newRequest && iteration < maxIterations) {
-      iteration += 1;
-      Private.scheduleRendering(host, renderFrame);
+      return continueRendering();
     } else {
       return stopRendering();
     }
@@ -1002,9 +1034,112 @@ function renderTextual(
   Private.scheduleRendering(host, renderFrame);
 }
 
+interface ISelectionOffsets {
+  processedCharacters: number;
+  anchor: number | null;
+  focus: number | null;
+}
+
+function computeSelectionCharacterOffset(
+  root: Node,
+  selection: Selection
+): ISelectionOffsets {
+  let anchor: number | null = null;
+  let focus: number | null = null;
+  let offset = 0;
+  for (const node of [...root.childNodes]) {
+    if (node === selection.focusNode) {
+      focus = offset + selection.focusOffset;
+    }
+    if (node === selection.anchorNode) {
+      anchor = offset + selection.anchorOffset;
+    }
+    if (node.childNodes.length > 0) {
+      const result = computeSelectionCharacterOffset(node, selection);
+      if (result.anchor) {
+        anchor = offset + result.anchor;
+      }
+      if (result.focus) {
+        focus = offset + result.focus;
+      }
+      offset += result.processedCharacters;
+    } else {
+      offset += node.textContent!.length;
+    }
+    if (anchor && focus) {
+      break;
+    }
+  }
+  return {
+    processedCharacters: offset,
+    anchor,
+    focus
+  };
+}
+
+function findTextSelectionNode(
+  root: Node,
+  textOffset: number | null,
+  offset: number
+) {
+  if (textOffset !== null) {
+    for (const node of [...root.childNodes]) {
+      // As much as possible avoid calling `textContent` here as it will cause layout invalidation
+      const nodeEnd =
+        node instanceof Text
+          ? node.nodeValue!.length
+          : (node instanceof HTMLAnchorElement
+              ? node.childNodes[0].nodeValue?.length ?? node.textContent?.length
+              : node.textContent?.length) ?? 0;
+      if (textOffset > offset && textOffset < offset + nodeEnd) {
+        if (node instanceof Text) {
+          return { node, positionOffset: textOffset - offset };
+        } else {
+          return findTextSelectionNode(node, textOffset, offset);
+        }
+      } else {
+        offset += nodeEnd;
+      }
+    }
+  }
+  return {
+    node: null,
+    positionOffset: null
+  };
+}
+
+function selectByOffsets(
+  root: Node,
+  selection: Selection,
+  offsets: ISelectionOffsets
+) {
+  const { node: focusNode, positionOffset: focusOffset } =
+    findTextSelectionNode(root, offsets.focus, 0);
+  const { node: anchorNode, positionOffset: anchorOffset } =
+    findTextSelectionNode(root, offsets.anchor, 0);
+  if (
+    anchorNode &&
+    focusNode &&
+    anchorOffset !== null &&
+    focusOffset !== null
+  ) {
+    selection.setBaseAndExtent(
+      anchorNode,
+      anchorOffset,
+      focusNode,
+      focusOffset
+    );
+  }
+}
+
 function replaceChangedNodes(host: HTMLElement, node: HTMLPreElement) {
   const result = checkChangedNodes(host, node);
-  // TODO: preserve selection
+  const selection = window.getSelection();
+  const hasSelection = selection && selection.containsNode(host, true);
+  const selectionOffsets = hasSelection
+    ? computeSelectionCharacterOffset(host, selection)
+    : null;
+  const pre = result ? result.parent : node;
   if (result) {
     for (const element of result.toDelete) {
       result.parent.removeChild(element);
@@ -1012,6 +1147,10 @@ function replaceChangedNodes(host: HTMLElement, node: HTMLPreElement) {
     result.parent.append(...result.toAppend);
   } else {
     host.replaceChildren(node);
+  }
+  // Restore selection - if there is a meaningful one.
+  if (selection && selectionOffsets) {
+    selectByOffsets(pre, selection, selectionOffsets);
   }
 }
 
@@ -1404,12 +1543,6 @@ namespace Private {
     if (!renderQueue.includes(host)) {
       renderQueue.push(host);
     }
-    // TODO - instead of constantly calling rAF (and cancelling it)
-    // call it once and update arguments if new chunk is streamed;
-    // this is because there is
-    // an overhead associated (0.6s out of 10s so not terrible, but noticeable);
-    // instead we could pass arguments via
-    // a weakMap or similar.
     const thisRequest = window.requestAnimationFrame(render);
     frameRequests.set(host, thisRequest);
   }
