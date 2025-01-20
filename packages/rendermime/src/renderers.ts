@@ -843,7 +843,6 @@ function renderTextual(
   const observer = new IntersectionObserver(
     entries => {
       isVisible = entries[0].isIntersecting;
-      console.log({ host, isVisible });
     },
     { threshold: 0 }
   );
@@ -909,8 +908,6 @@ function renderTextual(
 
     if (!shouldAutoLink) {
       host.replaceChildren(pre.cloneNode(true));
-      // host.replaceChildren(pre);
-      //TODO TEST, is cloning needed
       return stopRendering();
     }
     const cacheStore = Private.getCacheStore(autoLinkOptions);
@@ -995,7 +992,7 @@ function renderTextual(
       iteration += 1;
       Private.scheduleRendering(host, renderFrame);
     } else {
-      stopRendering();
+      return stopRendering();
     }
   };
 
@@ -1051,16 +1048,12 @@ function checkChangedNodes(host: HTMLElement, node: HTMLPreElement) {
 
   let lastSharedNode: number = -1;
   for (let i = 0; i < oldNodes.length; i++) {
-    //if (newNodes.length <= i) {
-    //  break;
-    //}
     const oldChild = oldNodes[i];
     const newChild = newNodes[i];
     if (
       newChild &&
       oldChild.nodeType === newChild.nodeType &&
       oldChild.textContent === newChild.textContent
-      //&& child.nodeValue === newChild.nodeValue - this does not work for anchors well
     ) {
       lastSharedNode = i;
     } else {
