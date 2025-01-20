@@ -818,73 +818,100 @@ function renderTextual(
   options: renderText.IRenderOptions,
   autoLinkOptions: IAutoLinkOptions
 ): void {
-  // TODO: now frequent calls to renderTextual are the bottleneck if server is streaming fast
-  // as each call takes 1.4ms; we could accumulate calls across 5ms intervals or such and improve
-  // performance - at least for rendering errors when using native sanitizer
-
   // Unpack the options.
   const { host, sanitizer, source } = options;
-
-  // TODO: push this into the rendering pipeline too?
-
-  // TODO: can we remove regex here and use indexOf or contains instead
-  const ansiPrefixRe = /\x1b/; // eslint-disable-line no-control-regex
-  const hasAnsiPrefix = ansiPrefixRe.test(source);
-
-  // Create the HTML content:
-  // If no ANSI codes are present use a fast path for escaping.
-  const content = hasAnsiPrefix
-    ? sanitizer.sanitize(Private.ansiSpan(source), {
-        allowedTags: ['span']
-      })
-    : nativeSanitize(source);
-
-  // Set the sanitized content for the host node.
-  const pre = document.createElement('pre');
-  pre.innerHTML = content;
-
-  const fullPreTextContent = pre.textContent;
-
-  if (!fullPreTextContent) {
-    // Short-circuit if there is no content to auto-link
-    host.replaceChildren(pre);
-    return;
-  }
-
-  /// TODO use layout containment to avoid high computation cost when autolinking?
-  // tried that - did not help much
 
   // We want to only manipulate DOM once per animation frame whether
   // the autolink is enabled or not, because a stream can also choke
   // rendering pipeline even if autolink is disabled. This acts as
   // an effective debouncer which matches the refresh rate of the
   // screen.
-  Private.abortRendering(host);
+  Private.cancelRenderingRequest(host);
 
   // Stop rendering after 10 minutes (assuming 60 Hz)
   const maxIterations = 60 * 60 * 10;
   let iteration = 0;
 
+  let fullPreTextContent: string | null = null;
+  let pre: HTMLPreElement;
+
+  let isVisible = true;
+
+  // We will use the observer to pause rendering if the element
+  // is not visible; this is helpful when opening a notebook
+  // with a large number of large textual outputs.
+  const observer = new IntersectionObserver(
+    entries => {
+      isVisible = entries[0].isIntersecting;
+      console.log({ host, isVisible });
+    },
+    { threshold: 0 }
+  );
+  observer.observe(host);
+
+  const stopRendering = () => {
+    // Remove the host from rendering queue
+    Private.removeFromQueue(host);
+    // Disconnect the intersection observer.
+    observer.disconnect();
+  };
+
   const renderFrame = (timestamp: number) => {
-    // Skip rendering in this frame if the output is not visible was (temporarily) removed from DOM
-    // - is hidden due to scrolling away in full windowed notebook mode) - TODO
-    // Note: cannot use checkVisibility as this triggers layout (unless we only use setTimeout to delay trashing?)
-    if (!host.isConnected || !Private.canRenderInFrame(timestamp, host)) {
-      // || !host.checkVisibility()) {
+    if (!host.isConnected) {
+      // Abort rendering if host is no longer in DOM; note, that even in
+      // full windowing notebook mode the output nodes are never removed,
+      // but instead the cell gets hidden (usually with `display: none`
+      // or in case of the active cell - opacity tricks).
+      return stopRendering();
+    }
+
+    // Delay rendering of this output if the output is not visible due to
+    // scrolling away in full windowed notebook mode, or if another output
+    // should be rendered first.
+    // Note: cannot use `checkVisibility` as it triggers style recalculation
+    // before we appended the new nodes from the stream, which leads to layout
+    // trashing. Instead we use intersection observer
+    if (!isVisible || !Private.canRenderInFrame(timestamp, host)) {
       Private.scheduleRendering(host, renderFrame);
       return;
     }
 
     const start = performance.now();
-
     Private.beginRendering(host);
+
+    if (fullPreTextContent === null) {
+      const ansiPrefixRe = '\x1b';
+      const hasAnsiPrefix = source.includes(ansiPrefixRe);
+
+      // Create the HTML content:
+      // If no ANSI codes are present use a fast path for escaping.
+      const content = hasAnsiPrefix
+        ? sanitizer.sanitize(Private.ansiSpan(source), {
+            allowedTags: ['span']
+          })
+        : nativeSanitize(source);
+
+      // Set the sanitized content for the host node.
+      pre = document.createElement('pre');
+      pre.innerHTML = content;
+
+      const maybePreTextContent = pre.textContent;
+
+      if (!maybePreTextContent) {
+        // Short-circuit if there is no content to auto-link
+        host.replaceChildren(pre);
+        return stopRendering();
+      }
+      fullPreTextContent = maybePreTextContent;
+    }
+
     const shouldAutoLink = sanitizer.getAutolink?.() ?? true;
 
     if (!shouldAutoLink) {
       host.replaceChildren(pre.cloneNode(true));
       // host.replaceChildren(pre);
       //TODO TEST, is cloning needed
-      return;
+      return stopRendering();
     }
     const cacheStore = Private.getCacheStore(autoLinkOptions);
     const cache = cacheStore.get(host);
@@ -926,18 +953,16 @@ function renderTextual(
       moreWorkToBeDone = toBeAutoLinked != '';
       elapsed = performance.now() - start;
       newRequest = Private.hasNewRenderingRequest(host);
-      //console.debug({elapsed, moreWorkToBeDone, fragment, breakIndex, iteration, newRequest});
     } while (elapsed < budget && moreWorkToBeDone && !newRequest);
 
-    // TODO: because keepExisting=False in renderModel, the pre node gets
-    // cleared as new data comes in, but there is a substantial delay before it reappears;
-    // how to ensure it gets rendered promptly?
+    // Note: we set `keepExisting` to `true` in `IRenderMime.IRenderer`s which
+    // use this method to ensure that the previous node is not removed from DOM
+    // when new chunks of data comes from the stream.
     if (linkedNodes.length === 1 && linkedNodes[0] instanceof Text) {
       if (host.childNodes.length === 1 && host.childNodes[0] === pre) {
         // no-op
       } else {
-        // todo clone?
-        host.replaceChildren(pre);
+        replaceChangedNodes(host, pre);
       }
     } else {
       // Persist nodes in cache by cloning them
@@ -958,70 +983,8 @@ function renderTextual(
         ...linkedNodes,
         document.createTextNode(toBeAutoLinked)
       ]);
-      //console.warn({status: 'rendering', toBeAutoLinked, node, preNodes, linkedNodes})
-      // setTimeout(() => {
-      // Do not perform DOM manipulation within requestAnimationFrame callback
-      // as this would result in layout trashing, instead push it to just after
 
-      // TODO: preserve selection?
-      // do not replace all, just the changed
-      /**
-       * Find nodes in `node` which do not have the same content or type and thus need to be appended.
-       */
-      function nodesToAppend(host: HTMLElement, node: HTMLPreElement) {
-        const oldPre = host.childNodes[0];
-        if (!oldPre) {
-          return;
-        }
-        if (!(oldPre instanceof HTMLPreElement)) {
-          return;
-        }
-        const newNodes = node.childNodes;
-        const oldNodes = oldPre.childNodes;
-        let lastSharedNode: number = -1;
-
-        if (newNodes.length < oldNodes.length) {
-          return;
-        }
-
-        for (let i = 0; i < oldNodes.length; i++) {
-          //if (newNodes.length <= i) {
-          //  break;
-          //}
-          const oldChild = oldNodes[i];
-          const newChild = newNodes[i];
-          if (
-            oldChild.nodeType === newChild.nodeType &&
-            oldChild.textContent === newChild.textContent
-            //&& child.nodeValue === newChild.nodeValue - this does not work for anchors well
-          ) {
-            lastSharedNode = i;
-          } else {
-            break;
-          }
-        }
-        if (lastSharedNode === -1) {
-          return;
-        }
-        return {
-          parent: oldPre,
-          toDelete: [...oldNodes].slice(lastSharedNode),
-          toAppend: [...newNodes].slice(lastSharedNode)
-        };
-      }
-
-      const result = nodesToAppend(host, node);
-      if (result) {
-        for (const element of result.toDelete) {
-          result.parent.removeChild(element);
-        }
-        result.parent.append(...result.toAppend);
-      } else {
-        host.replaceChildren(node);
-      }
-
-      //host.replaceChildren(node);
-      //}, 16);
+      replaceChangedNodes(host, node);
     }
 
     // Continue unless:
@@ -1031,10 +994,88 @@ function renderTextual(
     if (moreWorkToBeDone && !newRequest && iteration < maxIterations) {
       iteration += 1;
       Private.scheduleRendering(host, renderFrame);
+    } else {
+      stopRendering();
     }
   };
 
   Private.scheduleRendering(host, renderFrame);
+}
+
+function replaceChangedNodes(host: HTMLElement, node: HTMLPreElement) {
+  const result = checkChangedNodes(host, node);
+  // TODO: preserve selection
+  if (result) {
+    for (const element of result.toDelete) {
+      result.parent.removeChild(element);
+    }
+    result.parent.append(...result.toAppend);
+  } else {
+    host.replaceChildren(node);
+  }
+}
+
+/**
+ * Find nodes in `node` which do not have the same content or type and thus need to be appended.
+ */
+function checkChangedNodes(host: HTMLElement, node: HTMLPreElement) {
+  const oldPre = host.childNodes[0];
+  if (!oldPre) {
+    return;
+  }
+  if (!(oldPre instanceof HTMLPreElement)) {
+    return;
+  }
+  // this should be cheap as the new node is not in dom yet,. right?
+  node.normalize();
+  const newNodes = node.childNodes;
+  const oldNodes = oldPre.childNodes;
+
+  if (
+    // this could be generalized to appending a mix of text and non-text to a block of text too
+    // but for now handles the most common case of just streaming text
+    newNodes.length === 1 &&
+    newNodes[0] instanceof Text &&
+    [...oldNodes].every(n => n instanceof Text) &&
+    node.textContent!.startsWith(oldPre.textContent!)
+  ) {
+    const textNodeToAppend = document.createTextNode(
+      node.textContent!.slice(oldPre.textContent!.length)
+    );
+    return {
+      parent: oldPre,
+      toDelete: [],
+      toAppend: [textNodeToAppend]
+    };
+  }
+
+  let lastSharedNode: number = -1;
+  for (let i = 0; i < oldNodes.length; i++) {
+    //if (newNodes.length <= i) {
+    //  break;
+    //}
+    const oldChild = oldNodes[i];
+    const newChild = newNodes[i];
+    if (
+      newChild &&
+      oldChild.nodeType === newChild.nodeType &&
+      oldChild.textContent === newChild.textContent
+      //&& child.nodeValue === newChild.nodeValue - this does not work for anchors well
+    ) {
+      lastSharedNode = i;
+    } else {
+      break;
+    }
+  }
+
+  if (lastSharedNode === -1) {
+    return;
+  }
+  return {
+    parent: oldPre,
+    toDelete: [...oldNodes].slice(lastSharedNode),
+    toAppend: [...newNodes].slice(lastSharedNode)
+  };
 }
 
 function incrementalAutoLink(
@@ -1351,12 +1392,12 @@ namespace Private {
   const renderQueue = new Array<HTMLElement>();
   const frameRequests = new WeakMap<HTMLElement, number>();
 
-  export function abortRendering(host: HTMLElement) {
+  export function cancelRenderingRequest(host: HTMLElement) {
+    // do not remove from queue - the expectation is that rendering will resume
     const previousRequest = frameRequests.get(host);
     if (previousRequest) {
       window.cancelAnimationFrame(previousRequest);
     }
-    //removeFromQueue(host);
   }
 
   export function scheduleRendering(
@@ -1367,16 +1408,21 @@ namespace Private {
     if (!renderQueue.includes(host)) {
       renderQueue.push(host);
     }
+    // TODO - instead of constantly calling rAF (and cancelling it)
+    // call it once and update arguments if new chunk is streamed;
+    // this is because there is
+    // an overhead associated (0.6s out of 10s so not terrible, but noticeable);
+    // instead we could pass arguments via
+    // a weakMap or similar.
     const thisRequest = window.requestAnimationFrame(render);
     frameRequests.set(host, thisRequest);
   }
 
   export function beginRendering(host: HTMLElement) {
     frameRequests.delete(host);
-    removeFromQueue(host);
   }
 
-  function removeFromQueue(host: HTMLElement) {
+  export function removeFromQueue(host: HTMLElement) {
     const index = renderQueue.indexOf(host);
     if (index !== -1) {
       renderQueue.splice(index, 1);
