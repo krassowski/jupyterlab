@@ -840,19 +840,22 @@ function renderTextual(
   // We will use the observer to pause rendering if the element
   // is not visible; this is helpful when opening a notebook
   // with a large number of large textual outputs.
-  const observer = new IntersectionObserver(
-    entries => {
-      isVisible = entries[0].isIntersecting;
-    },
-    { threshold: 0 }
-  );
-  observer.observe(host);
+  let observer: IntersectionObserver | null = null;
+  if (typeof IntersectionObserver !== 'undefined') {
+    observer = new IntersectionObserver(
+      entries => {
+        isVisible = entries[0].isIntersecting;
+      },
+      { threshold: 0 }
+    );
+    observer.observe(host);
+  }
 
   const stopRendering = () => {
     // Remove the host from rendering queue
     Private.removeFromQueue(host);
     // Disconnect the intersection observer.
-    observer.disconnect();
+    observer?.disconnect();
   };
 
   const renderFrame = (timestamp: number) => {
