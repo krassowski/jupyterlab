@@ -3,15 +3,16 @@
  * Distributed under the terms of the Modified BSD License.
  */
 
-import { Cell, CodeCell, CodeCellModel } from '@jupyterlab/cells';
+import { Cell, CodeCell, CodeCellModel, MarkdownCell } from '@jupyterlab/cells';
 import {
   WindowedLayout,
   WindowedList,
   WindowedListModel
 } from '@jupyterlab/ui-components';
+import { IRenderMime } from '@jupyterlab/rendermime';
 import { Message, MessageLoop } from '@lumino/messaging';
 import { Debouncer } from '@lumino/polling';
-import { Widget } from '@lumino/widgets';
+import { Panel, Widget } from '@lumino/widgets';
 import { DROP_SOURCE_CLASS, DROP_TARGET_CLASS } from './constants';
 
 /**
@@ -332,6 +333,33 @@ export class NotebookWindowedLayout extends WindowedLayout {
       this._toggleSoftVisibility(widget, false);
       // Return before sending "AfterDetach" message to CodeCell
       // to prevent removing contents of the active cell.
+      return;
+    }
+    const cell = widget as Cell;
+
+    let windowingBehavior: IRenderMime.WindowingBehavior | undefined;
+    if (cell instanceof CodeCell) {
+      for (const output of cell.outputArea.layout.widgets) {
+        // TODO: maybe move this logic to CodeCell, or make it expose output renderers?
+        const panel = output as Panel;
+        const renderers = (panel.widgets ? panel.widgets : [panel]).filter(
+          it => 'windowingBehavior' in it
+        ) as IRenderMime.IRenderer[];
+        const renderersWithOpinion = renderers
+          .map(renderer => renderer.windowingBehavior)
+          .filter(it => it !== undefined);
+        if (renderersWithOpinion.length) {
+          windowingBehavior = Math.min(...renderersWithOpinion);
+        }
+        console.log({ windowingBehavior });
+      }
+    } else if (cell instanceof MarkdownCell) {
+      windowingBehavior = cell.renderer.windowingBehavior;
+    }
+
+    // TODO: implement IRenderMime.WindowingBehavior.detachFromDom too
+    if (windowingBehavior === IRenderMime.WindowingBehavior.hide) {
+      this._toggleSoftVisibility(widget, false);
       return;
     }
     // TODO we could improve this further by discarding also the code cell without outputs

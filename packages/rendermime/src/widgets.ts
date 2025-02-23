@@ -176,6 +176,12 @@ export class RenderedHTML extends RenderedHTMLCommon {
     this.addClass('jp-RenderedHTML');
   }
 
+  get windowingBehavior() {
+    if (this.node.querySelector('defs')) {
+      return IRenderMime.WindowingBehavior.hide;
+    }
+  }
+
   /**
    * Render a mime model.
    *
@@ -310,6 +316,12 @@ export class RenderedMarkdown extends RenderedHTMLCommon {
   constructor(options: IRenderMime.IRendererOptions) {
     super(options);
     this.addClass('jp-RenderedMarkdown');
+  }
+
+  get windowingBehavior() {
+    if (this.node.querySelector('script,defs')) {
+      return IRenderMime.WindowingBehavior.hide;
+    }
   }
 
   /**

@@ -307,6 +307,41 @@ export namespace IRenderMime {
      * of the widget to update it if and when new data is available.
      */
     renderModel(model: IMimeModel): Promise<void>;
+
+    /**
+     * What windowing optimization can be applied to the widget.
+     */
+    windowingBehavior?: WindowingBehavior;
+  }
+
+  /**
+   * Optimization level that can be applied to the widget when outside of viewport.
+   *
+   * The subsequent levels represent decreasing performance benefits,
+   * but also entail lower risk of side-effects.
+   */
+  export enum WindowingBehavior {
+    /**
+     * Detaches the cell from DOM.
+     * The highest performance benefit, but cannot be used for cells
+     * which contribute styles or scripts that need to be used globally,
+     * nor for any cases described below for removing from layout.
+     */
+    detachFromDom = 1,
+    /**
+     * Hides the cell by applying `display: none` style.
+     * Good performance, cannot be used with cells which resizing with
+     * a delay after display, with cells containing SVG `<defs>`, or
+     * with `iframe`s (where state gets lost in Safari and older Chrome)
+     */
+    removeFromLayout = 2,
+    /**
+     * Hides the cell by making it transparent and forcing its height to zero.
+     * Negligible performance benefit, but no known compatibility issues.
+     * The implementation uses styling over applying `visibility: hidden`
+     * to preserve the widget in the accessibility tree.
+     */
+    hide = 3
   }
 
   /**
