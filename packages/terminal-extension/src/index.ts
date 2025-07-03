@@ -391,27 +391,6 @@ function addCommands(
       void tracker.add(main);
       app.shell.activateById(main.id);
       return main;
-    },
-    describedBy: {
-      args: {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            description: trans.__('Terminal session name')
-          },
-          cwd: {
-            type: 'string',
-            description: trans.__('Current working directory for the terminal')
-          },
-          isPalette: {
-            type: 'boolean',
-            description: trans.__(
-              'Whether the command is called from the command palette'
-            )
-          }
-        }
-      }
     }
   });
 
@@ -517,13 +496,7 @@ function addCommands(
       return widget.hasSelection();
     },
     icon: copyIcon.bindprops({ stylesheet: 'menuItem' }),
-    label: trans.__('Copy'),
-    describedBy: {
-      args: {
-        type: 'object',
-        properties: {}
-      }
-    }
+    label: trans.__('Copy')
   });
 
   /**
