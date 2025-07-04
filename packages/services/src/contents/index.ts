@@ -5,13 +5,15 @@ import type { DocumentChange, ISharedDocument, YDocument } from '@jupyter/ydoc';
 
 import { PathExt, URLExt } from '@jupyterlab/coreutils';
 
-import { PartialJSONObject } from '@lumino/coreutils';
+import { PartialJSONObject, PromiseDelegate } from '@lumino/coreutils';
 
 import { DisposableDelegate, IDisposable } from '@lumino/disposable';
 
 import { ISignal, Signal } from '@lumino/signaling';
 
 import { ServerConnection } from '..';
+
+import { stringifyAsync } from 'yieldable-json';
 
 import * as validate from './validate';
 
@@ -31,6 +33,9 @@ const FILES_URL = 'files';
 export type SharedDocumentFactory = (
   options: Contents.ISharedFactoryOptions
 ) => YDocument<DocumentChange>;
+
+// @ts-ignore
+window.setImmediate = (fn: any) => window.setTimeout(fn, 0);
 
 /**
  * A namespace for contents interfaces.
@@ -1792,18 +1797,23 @@ export class RestContentProvider implements IContentProvider {
   ): Promise<Contents.IModel> {
     const settings = this._options.serverSettings;
     const url = this._getUrl(localPath);
-    const init = {
-      method: 'PUT',
-      body: JSON.stringify(options)
-    };
-    const response = await ServerConnection.makeRequest(url, init, settings);
-    // will return 200 for an existing file and 201 for a new file
-    if (response.status !== 200 && response.status !== 201) {
-      const err = await ServerConnection.ResponseError.create(response);
-      throw err;
-    }
-    const data = await response.json();
-    validate.validateContentsModel(data);
+    const done = new PromiseDelegate<Contents.IModel>();
+    stringifyAsync(options, async (err, body) => {
+      const init = {
+        method: 'PUT',
+        body: body
+      };
+      const response = await ServerConnection.makeRequest(url, init, settings);
+      // will return 200 for an existing file and 201 for a new file
+      if (response.status !== 200 && response.status !== 201) {
+        const err = await ServerConnection.ResponseError.create(response);
+        throw err;
+      }
+      const data = await response.json();
+      validate.validateContentsModel(data);
+      done.resolve(data);
+    });
+    const data = await done.promise;
     return data;
   }
 
