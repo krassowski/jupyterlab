@@ -452,17 +452,9 @@ export abstract class WindowedListModel implements WindowedList.IModel {
    * @returns The current items range to display
    */
   getRangeToRender(): WindowedList.WindowIndex | null {
-    let newWindowIndex: [number, number, number, number] = [
-      0,
-      Math.max(this.widgetCount - 1, -1),
-      0,
-      Math.max(this.widgetCount - 1, -1)
-    ];
+    const newWindowIndex = this._getRangeToRender();
 
     const previousLastMeasuredIndex = this._measuredAllUntilIndex;
-    if (this.windowingActive) {
-      newWindowIndex = this._getRangeToRender();
-    }
     const [startIndex, stopIndex] = newWindowIndex;
 
     if (
@@ -1824,10 +1816,10 @@ export class WindowedLayout extends PanelLayout {
    *
    * #### Notes
    * This is a reimplementation of the base class method,
-   * and is a no-op.
    */
   protected onUpdateRequest(msg: Message): void {
-    // This is a no-op.
+    // @ts-ignore
+    this.parent?._update();
   }
 }
 
