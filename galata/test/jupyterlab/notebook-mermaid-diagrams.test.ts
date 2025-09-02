@@ -106,6 +106,23 @@ for (const theme of ['default', 'dark']) {
         );
         await output.waitFor();
 
+        // Wait for the actual diagram content to be rendered
+        // For complex diagrams like architecture and packet, we need to ensure
+        // the SVG content is fully loaded before taking a screenshot
+        try {
+          const diagramContent = output.locator('img, svg, [id^="mermaid-"]');
+          await diagramContent.waitFor({ timeout: 10000 });
+        } catch (error) {
+          // Fallback: if we can't find the specific content, wait for any child elements
+          await output.locator('*').first().waitFor({ timeout: 5000 });
+        }
+
+        // Additional wait for complex beta diagrams that might need more time
+        if (diagram === 'architecture' || diagram === 'packet') {
+          // Wait a bit more to ensure the diagram is fully stabilized
+          await page.waitForTimeout(1000);
+        }
+
         expect(await resizePageAndScreenshot(output)).toMatchSnapshot(
           `mermaid-diagram-${theme}-${iZero}-${diagram}.png`
         );
