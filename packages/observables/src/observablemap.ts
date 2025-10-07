@@ -325,6 +325,8 @@ export class ObservableMap<T> implements IObservableMap<T> {
 export namespace ObservableMap {
   /**
    * The options used to initialize an observable map.
+   *
+   * @typeParam - the type of the values in the map.
    */
   export interface IOptions<T> {
     /**

@@ -21,15 +21,31 @@ export namespace Table {
   }
   /**
    * The initialization options for the table.
+   *
+   * @typeParam - the type of the data in individual table cells.
    */
   export interface IOptions<T> extends Partial<ISortState> {
+    /**
+     * Rows of the table.
+     */
     rows: IRow<T>[];
+    /**
+     * Columns of the table.
+     */
     columns: IColumn<T>[];
+    /**
+     * The function to execute when user clicks on a row.
+     */
     onRowClick?: React.MouseEventHandler<HTMLTableRowElement>;
+    /**
+     * A node to display when the table is empty.
+     */
     blankIndicator: () => ReactNode;
   }
   /**
    * Table row with data to display.
+   *
+   * @typeParam - the type of the data in individual table cells.
    */
   export interface IRow<T> {
     data: T;
@@ -37,13 +53,33 @@ export namespace Table {
   }
   /**
    * Column definition.
+   *
+   * @typeParam - the type of the data in individual table cells.
    */
   export interface IColumn<T> {
+    /**
+     * Column row identifier.
+     */
     id: string;
+    /**
+     * Column label.
+     */
     label: string;
+    /**
+     * Callback for renering cells.
+     */
     renderCell(data: T): ReactNode;
+    /**
+     * Function comparing the data in two cells.
+     */
     sort(a: T, b: T): number | undefined;
+    /**
+     * Callback for checking if a column should be shown.
+     */
     isAvailable?(): boolean;
+    /**
+     * Whether the column is hidden.
+     */
     isHidden?: boolean;
   }
 }
@@ -52,6 +88,8 @@ export namespace Table {
  * Sortable table component for small datasets.
  *
  * For large datasets use `DataGrid` from `@lumino/datagrid`.
+ *
+ * @typeParam - the type of the data in individual table cells.
  */
 export function Table<T>(props: Table.IOptions<T>) {
   const [sortState, setSortState] = useState<Table.ISortState>({

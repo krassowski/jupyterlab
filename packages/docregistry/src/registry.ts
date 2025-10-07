@@ -1173,6 +1173,9 @@ export namespace DocumentRegistry {
 
   /**
    * An interface for a widget extension.
+   *
+   * @typeParam T - the type of the widget being extended.
+   * @typeParam U - the type of the model.
    */
   export interface IWidgetExtension<T extends Widget, U extends IModel> {
     /**

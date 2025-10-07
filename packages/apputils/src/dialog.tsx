@@ -543,6 +543,8 @@ export namespace Dialog {
 
   /**
    * The body input types.
+   *
+   * @typeParam T - the type of the return value.
    */
   export type Body<T> = IBodyWidget<T> | React.ReactElement<any> | string;
 
@@ -553,6 +555,8 @@ export namespace Dialog {
 
   /**
    * A widget used as a dialog body.
+   *
+   * @typeParam T - the type of the return value, string by default.
    */
   export interface IBodyWidget<T = string> extends Widget {
     /**
@@ -647,6 +651,8 @@ export namespace Dialog {
 
   /**
    * The options used to create a dialog.
+   *
+   * @typeParam T - the type of the return value.
    */
   export interface IOptions<T> {
     /**
@@ -768,6 +774,8 @@ export namespace Dialog {
 
   /**
    * The result of a dialog.
+   *
+   * @typeParam T - the type of the return value.
    */
   export interface IResult<T> {
     /**

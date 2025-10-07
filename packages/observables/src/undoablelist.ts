@@ -22,6 +22,8 @@ export interface ISerializer<T> {
 
 /**
  * An observable list that supports undo/redo.
+ *
+ * @typeParam - the type of the values on the list.
  */
 export interface IObservableUndoableList<T> extends IObservableList<T> {
   /**

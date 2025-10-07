@@ -288,6 +288,8 @@ export namespace Notification {
 
   /**
    * Notification options
+   *
+   * @typeParam T - the type of the data associated with the notification.
    */
   export interface IOptions<T extends ReadonlyJSONValue> {
     /**

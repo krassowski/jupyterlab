@@ -695,6 +695,8 @@ export class ObservableList<T> implements IObservableList<T> {
 export namespace ObservableList {
   /**
    * The options used to initialize an observable map.
+   *
+   * @typeParam - the type of the values in the list.
    */
   export interface IOptions<T> {
     /**
