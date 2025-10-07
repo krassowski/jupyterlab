@@ -22,7 +22,7 @@ import { type IPlugin, Token } from '@lumino/coreutils';
 /**
  * The type for a service manager plugin.
  *
- * @typeparam T - The type that the plugin `provides` upon being activated.
+ * @typeParam T - The type that the plugin `provides` upon being activated.
  *
  * #### Notes
  * This type of plugin is different than a JupyterFrontEndPlugin,

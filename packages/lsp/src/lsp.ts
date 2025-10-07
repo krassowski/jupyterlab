@@ -48,7 +48,7 @@ export enum CompletionItemKind {
   Struct = 22,
   Event = 23,
   Operator = 24,
-  TypeParameter = 25
+  typeParameter = 25
 }
 
 export enum DocumentHighlightKind {
