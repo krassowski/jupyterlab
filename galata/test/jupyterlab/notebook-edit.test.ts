@@ -215,4 +215,83 @@ test.describe('Notebook Edit', () => {
 
     expect(await nbPanel!.screenshot()).toMatchSnapshot(imageName);
   });
+
+  for (let iteration = 0; iteration < 100; iteration++) {
+    test(`Data-windowing-index consistency on merge and undo ${iteration}`, async ({
+      page
+    }) => {
+      // Create 10 code cells with values print(1) to print(10)
+      for (let i = 1; i <= 10; i++) {
+        await page.notebook.addCell('code', `print(${i})`);
+      }
+      await page.notebook.selectCells(0);
+      await page.notebook.deleteCells();
+
+      // Get windowing indices before merge
+      const getWindowingIndices = async () => {
+        const notebook = await page.notebook.getNotebookInPanelLocator();
+        const cellElements = await notebook!
+          .locator('[data-windowed-list-index]')
+          .all();
+        const indices: number[] = [];
+        if (cellElements) {
+          for (const element of cellElements) {
+            const idx = await element.getAttribute('data-windowed-list-index');
+            if (idx !== null) {
+              indices.push(parseInt(idx, 10));
+            }
+          }
+        }
+        return indices;
+      };
+
+      const indicesBeforeMerge = await getWindowingIndices();
+      expect(indicesBeforeMerge.length).toBe(10);
+
+      // Verify indices increase by 1
+      const verifyIncreasingByOne = (indices: number[]) => {
+        for (let i = 1; i < indices.length; i++) {
+          if (indices[i] !== indices[i - 1] + 1) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+      expect(verifyIncreasingByOne(indicesBeforeMerge)).toBeTruthy();
+
+      await page.waitForTimeout(500);
+
+      // Select cells 6, 5, 4 in that order (multi-select)
+      const cell6 = await page.notebook.getCellLocator(6);
+
+      await cell6!.click();
+      // Enter command mode
+      await page.keyboard.press('Escape');
+
+      // Select cell 5 and 4
+      await page.keyboard.press('Shift+ArrowUp');
+      await page.keyboard.press('Shift+ArrowUp');
+
+      // Press M to merge
+      await page.keyboard.press('Shift+KeyM');
+
+      const indicesAfterMerge = await getWindowingIndices();
+      expect(indicesAfterMerge.length).toBe(8);
+
+      // Verify windowing indices increase by 1 after merge
+      expect(verifyIncreasingByOne(indicesAfterMerge)).toBeTruthy();
+
+      // Press Z to undo
+      await page.keyboard.press('KeyZ');
+
+      const indicesAfterUndo = await getWindowingIndices();
+      expect(indicesAfterUndo.length).toBe(10);
+
+      // Verify windowing indices increase by 1 after undo
+      expect(verifyIncreasingByOne(indicesAfterUndo)).toBeTruthy();
+      // Verify indices returned to original state
+      expect(indicesAfterUndo).toEqual(indicesBeforeMerge);
+    });
+  }
 });
