@@ -20,7 +20,7 @@ env:
 
 jobs:
   test:
-    name: Visual Regression Tests (${{ matrix.browser }})
+    name: Visual Regression Tests (${{ matrix.browser }} - Shard ${{ matrix.shard }}/${{ strategy.job-total }})
     if: ${{ (github.event_name != 'issue_comment') || (github.event.issue.pull_request && (contains(github.event.comment.body, 'Galata snapshots updated.'))) }}
     timeout-minutes: 260
     runs-on: ubuntu-22.04
@@ -32,6 +32,7 @@ jobs:
             browser: 'chromium'
           - project: 'jupyterlab-firefox'
             browser: 'firefox'
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,33 +76,35 @@ jobs:
       - name: Test
         run: |
           cd galata
-          jlpm run test --project ${{ matrix.project }}
-          mv playwright-report playwright-report-${{ matrix.project }} || true
+          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/4
+          mv playwright-report playwright-report-${{ matrix.project }}-shard-${{ matrix.shard }} || true
           if [[ "${{ matrix.browser }}" == "chromium" ]]; then
-            jlpm run test --project galata
-            mv playwright-report playwright-report-galata || true
-            mv galata/test-results galata/test-jupyterlab-results || true
+            jlpm run test --project galata --shard ${{ matrix.shard }}/4
+            mv playwright-report playwright-report-galata-shard-${{ matrix.shard }} || true
+            mv galata/test-results galata/test-jupyterlab-results-shard-${{ matrix.shard }} || true
 
             # Run benchmark tests once to ensure they have no regression
-            BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark
-            # Move benchmark report
-            mv playwright-report playwright-report-benchmark || true
+            if [[ "${{ matrix.shard }}" == "1" ]]; then
+              BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark
+              # Move benchmark report
+              mv playwright-report playwright-report-benchmark || true
+            fi
           fi
 
       - name: Upload Galata Test assets
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: jupyterlab-galata-test-assets-${{ matrix.browser }}
+          name: jupyterlab-galata-test-assets-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
-            galata/test-${{ matrix.project }}-results
+            galata/test-*-shard-${{ matrix.shard }}-results
             galata/test-results
 
       - name: Upload Galata Test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: jupyterlab-galata-report-${{ matrix.browser }}
+          name: jupyterlab-galata-report-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
             galata/playwright-report*
 
@@ -109,6 +112,61 @@ jobs:
         if: always()
         run: |
           cat /tmp/jupyterlab_server.log
+
+  merge-reports:
+    name: Merge ${{ matrix.browser }} Test Reports
+    if: always()
+    needs: test
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - browser: chromium
+            pattern: jupyterlab-galata-report-chromium-shard-*
+            artifact-name: jupyterlab-galata-merged-reports-chromium
+          - browser: firefox
+            pattern: jupyterlab-galata-report-firefox-shard-*
+            artifact-name: jupyterlab-galata-merged-reports-firefox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Base Setup
+        uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ matrix.pattern }}
+          path: artifacts
+
+      - name: Merge Playwright reports
+        run: |
+          mkdir -p merged-reports
+
+          if [[ "${{ matrix.browser }}" == "chromium" ]]; then
+            # Merge chromium jupyterlab reports
+            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-jupyterlab &> /dev/null; then
+              npx playwright merge-reports --reporter html merged-reports/chromium artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-jupyterlab
+            fi
+
+            # Merge galata reports
+            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-galata &> /dev/null; then
+              npx playwright merge-reports --reporter html merged-reports/galata artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-galata
+            fi
+          else
+            # Merge firefox jupyterlab-firefox reports
+            if ls artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox &> /dev/null; then
+              npx playwright merge-reports --reporter html merged-reports/firefox artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox
+            fi
+          fi
+
+      - name: Upload merged reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: merged-reports
 
   test-documentation:
     name: Visual Regression Documentation
