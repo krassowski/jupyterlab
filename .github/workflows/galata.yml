@@ -78,11 +78,11 @@ jobs:
         run: |
           cd galata
           # TODO remove --max-failures its only for now to help debug
-          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/4 --max-failures=1
-          mv playwright-report playwright-report-${{ matrix.project }}-shard-${{ matrix.shard }} || true
+          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/4 --max-failures=1 --reporter=blob --reporter=github
+          mv blob-report blob-report-${{ matrix.project }}-shard-${{ matrix.shard }} || true
           if [[ "${{ matrix.browser }}" == "chromium" ]]; then
-            jlpm run test --project galata --shard ${{ matrix.shard }}/4 --max-failures=1
-            mv playwright-report playwright-report-galata-shard-${{ matrix.shard }} || true
+            jlpm run test --project galata --shard ${{ matrix.shard }}/4 --max-failures=1 --reporter=blob --reporter=github
+            mv blob-report blob-report-galata-shard-${{ matrix.shard }} || true
 
             # Run benchmark tests once to ensure they have no regression
             if [[ "${{ matrix.shard }}" == "1" ]]; then
@@ -106,6 +106,7 @@ jobs:
         with:
           name: jupyterlab-galata-report-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
+            galata/blob-report*
             galata/playwright-report*
 
       - name: Print JupyterLab logs
@@ -154,20 +155,20 @@ jobs:
 
           if [[ "${{ matrix.browser }}" == "chromium" ]]; then
             # Merge chromium jupyterlab reports
-            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-jupyterlab &> /dev/null; then
-              npx playwright merge-reports --reporter html merged-reports/chromium artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-jupyterlab
+            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/blob-report-jupyterlab-shard-* &> /dev/null; then
+              npx playwright merge-reports --reporter html --reporter-output merged-reports/chromium artifacts/jupyterlab-galata-report-chromium-shard-*/blob-report-jupyterlab-shard-*
             fi
 
             # Merge galata reports
-            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-galata &> /dev/null; then
-              npx playwright merge-reports --reporter html merged-reports/galata artifacts/jupyterlab-galata-report-chromium-shard-*/playwright-report-galata
+            if ls artifacts/jupyterlab-galata-report-chromium-shard-*/blob-report-galata-shard-* &> /dev/null; then
+              npx playwright merge-reports --reporter html --reporter-output merged-reports/galata artifacts/jupyterlab-galata-report-chromium-shard-*/blob-report-galata-shard-*
             fi
           else
             # Merge firefox jupyterlab-firefox reports
             echo "=== Looking for Firefox reports ==="
             ls -la artifacts/jupyterlab-galata-report-firefox-shard-*/ || echo "No firefox shard directories"
-            if ls artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox &> /dev/null; then
-              npx playwright merge-reports --reporter html merged-reports/firefox artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox
+            if ls artifacts/jupyterlab-galata-report-firefox-shard-*/blob-report-jupyterlab-firefox-shard-* &> /dev/null; then
+              npx playwright merge-reports --reporter html --reporter-output merged-reports/firefox artifacts/jupyterlab-galata-report-firefox-shard-*/blob-report-jupyterlab-firefox-shard-*
             fi
           fi
 
