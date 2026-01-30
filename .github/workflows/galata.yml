@@ -27,12 +27,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - project: 'jupyterlab'
-            browser: 'chromium'
-          - project: 'jupyterlab-firefox'
-            browser: 'firefox'
+        browser: [chromium, firefox]
         shard: [1, 2, 3, 4]
+        include:
+          - browser: chromium
+            project: jupyterlab
+          - browser: firefox
+            project: jupyterlab-firefox
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,16 +77,16 @@ jobs:
       - name: Test
         run: |
           cd galata
-          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/4
+          # TODO remove --max-failures its only for now to help debug
+          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/4 --max-failures=1
           mv playwright-report playwright-report-${{ matrix.project }}-shard-${{ matrix.shard }} || true
           if [[ "${{ matrix.browser }}" == "chromium" ]]; then
-            jlpm run test --project galata --shard ${{ matrix.shard }}/4
+            jlpm run test --project galata --shard ${{ matrix.shard }}/4 --max-failures=1
             mv playwright-report playwright-report-galata-shard-${{ matrix.shard }} || true
-            mv galata/test-results galata/test-jupyterlab-results-shard-${{ matrix.shard }} || true
 
             # Run benchmark tests once to ensure they have no regression
             if [[ "${{ matrix.shard }}" == "1" ]]; then
-              BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark
+              BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark --max-failures=1
               # Move benchmark report
               mv playwright-report playwright-report-benchmark || true
             fi
@@ -97,7 +98,6 @@ jobs:
         with:
           name: jupyterlab-galata-test-assets-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: |
-            galata/test-*-shard-${{ matrix.shard }}-results
             galata/test-results
 
       - name: Upload Galata Test report
@@ -140,6 +140,14 @@ jobs:
           pattern: ${{ matrix.pattern }}
           path: artifacts
 
+      - name: Debug - List downloaded artifacts
+        run: |
+          echo "=== Contents of artifacts directory ==="
+          ls -la artifacts/ || echo "artifacts directory not found"
+          echo "=== Checking for specific patterns ==="
+          ls -la artifacts/jupyterlab-galata-report-${{ matrix.browser }}-shard-*/ || echo "No shard directories found"
+          find artifacts/ -name "playwright-report*" -type d || echo "No playwright-report directories found"
+
       - name: Merge Playwright reports
         run: |
           mkdir -p merged-reports
@@ -156,10 +164,19 @@ jobs:
             fi
           else
             # Merge firefox jupyterlab-firefox reports
+            echo "=== Looking for Firefox reports ==="
+            ls -la artifacts/jupyterlab-galata-report-firefox-shard-*/ || echo "No firefox shard directories"
             if ls artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox &> /dev/null; then
               npx playwright merge-reports --reporter html merged-reports/firefox artifacts/jupyterlab-galata-report-firefox-shard-*/playwright-report-jupyterlab-firefox
             fi
           fi
+
+      - name: Debug - Check merged reports
+        if: always()
+        run: |
+          echo "=== Contents of merged-reports ==="
+          ls -la merged-reports/ || echo "merged-reports directory is empty or not found"
+          find merged-reports/ -type f | head -20 || echo "No files in merged-reports"
 
       - name: Upload merged reports
         if: always()
