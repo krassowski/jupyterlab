@@ -7,7 +7,7 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 module.exports = {
   reporter: [
     [process.env.CI ? 'github' : 'list'],
-    ['html', { open: process.env.CI ? 'never' : 'on-failure' }]
+    process.env.CI ? ['blob'] : ['html', { open: 'on-failure' }]
   ],
   reportSlowTests: null,
   timeout: 60000,
