@@ -33,14 +33,16 @@ jobs:
         include:
           - browser: chromium
             project: jupyterlab
-          - browser: chromium
-            project: galata
-            shard: [1, 2]
-            shards: 2
           - browser: firefox
             project: jupyterlab-firefox
-            shard: [1, 2, 3]
-            shards: 3
+          - browser: chromium
+            project: galata
+            shard: 1
+            shards: 2
+          - browser: chromium
+            project: galata
+            shard: 2
+            shards: 2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
