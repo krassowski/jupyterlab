@@ -89,7 +89,6 @@ jobs:
           cd galata
           # TODO remove --max-failures its only for now to help debug
           jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/${{ matrix.shards }} --max-failures=1
-          mv blob-report blob-report-${{ matrix.project }}-shard-${{ matrix.shard }}
 
           if [[ "${{ matrix.browser }}" == "chromium" ]] && [[ "${{ matrix.shard }}" == "1" ]]; then
             # Run benchmark tests once to ensure they have no regressions
@@ -99,18 +98,18 @@ jobs:
           fi
       - name: Upload Galata Test assets
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}-${{ matrix.shard }}
-          path: |
-            galata/test-results
+          path: galata/test-results
+          if-no-files-found: ignore  # expected when no tests fail
 
       - name: Upload Galata Test report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-${{ matrix.shard }}
-          path: galata/blob-report*
+          path: galata/blob-report
           retention-days: 1
           compression-level: 1
 
@@ -120,7 +119,7 @@ jobs:
           cat /tmp/jupyterlab_server.log
 
   merge-reports:
-    name: Merge ${{ matrix.browser }} Test Reports and Results
+    name: Merge Test Reports and Results (${{ matrix.browser }}, ${{ matrix.project }})
     if: ${{ !cancelled() }}
     needs: test
     runs-on: ubuntu-22.04
@@ -147,11 +146,16 @@ jobs:
           pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
           merge-multiple: true
 
+      - name: Debug - List downloaded artifacts
+        run: |
+          echo "=== Contents of artifacts directory ==="
+          ls -la artifacts/ || echo "artifacts directory not found"
+
       - name: Merge Playwright reports
         run: |
           mkdir -p merged-reports
 
-          npx playwright merge-reports --reporter html,github artifacts/
+          npx playwright merge-reports --reporter html,github artifacts/blob-report
           mv merged-reports/${{ matrix.browser }}
 
       - name: Debug - Check merged reports
@@ -162,12 +166,13 @@ jobs:
           find merged-reports/ -type f | head -20 || echo "No files in merged-reports"
 
       - name: Upload merged reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: galata-report-${{ matrix.browser }}-${{ matrix.project }}
           path: merged-reports
 
       - name: Merge and upload test results
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact/merge@v4
         with:
           name: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}
@@ -175,6 +180,7 @@ jobs:
           delete-merged: true
 
       - name: Merge blobs and delete individual shards
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact/merge@v4
         with:
           name: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}
@@ -269,7 +275,7 @@ jobs:
 
       - name: Upload Galata Test assets
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jupyterlab-documentation-test-assets
           path: |
@@ -277,7 +283,7 @@ jobs:
 
       - name: Upload Galata Test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jupyterlab-documentation-report
           path: |
