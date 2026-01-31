@@ -1,11 +1,6 @@
 name: UI Tests
 
 on:
-  # We currently turned off Galata snapshot updates via issue comments
-  # We comment this trigger so the workflow runs are not swamped by comments triggering skipped runs
-  # TODO: re-enable once snapshot updates via comments are enabled again
-  # issue_comment:
-  #   types: [created]
   push:
     branches:
       - main
@@ -21,7 +16,6 @@ env:
 jobs:
   test:
     name: Integration Tests (${{ matrix.browser }} - ${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
-    if: ${{ (github.event_name != 'issue_comment') || (github.event.issue.pull_request && (contains(github.event.comment.body, 'Galata snapshots updated.'))) }}
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     strategy:
@@ -50,12 +44,19 @@ jobs:
       - name: Base Setup
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
 
+      - name: Find out Playwright version
+        id: pw-version
+        run: |
+          PW_VERSION=$(grep -m1 "playwright@" yarn.lock)
+          echo "Playwright version: $PW_VERSION"
+          echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
+
       - name: Set up browser cache
         uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/pw-browsers
-          key: ${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('ui-tests/yarn.lock') }}
+          key: ${{ runner.os }}-${{ matrix.browser }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install dependencies
         run: |
@@ -146,16 +147,11 @@ jobs:
           pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
           merge-multiple: true
 
-      - name: Debug - List downloaded artifacts
-        run: |
-          echo "=== Contents of artifacts directory ==="
-          ls -la artifacts/ || echo "artifacts directory not found"
-
       - name: Merge Playwright reports
         run: |
           mkdir -p merged-reports
 
-          npx playwright merge-reports --reporter html,github artifacts/blob-report-*/*
+          npx playwright merge-reports --reporter html,github artifacts/
           mv merged-reports/${{ matrix.browser }}
 
       - name: Debug - Check merged reports
@@ -166,7 +162,6 @@ jobs:
           find merged-reports/ -type f | head -20 || echo "No files in merged-reports"
 
       - name: Upload merged reports
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: galata-report-${{ matrix.browser }}-${{ matrix.project }}
@@ -188,7 +183,6 @@ jobs:
 
   test-documentation:
     name: Visual Regression Documentation
-    if: ${{ (github.event_name != 'issue_comment') || (github.event.issue.pull_request && (contains(github.event.comment.body, 'Documentation snapshots updated.'))) }}
     # Python version is frozen through strategy.matrix.python-version
     # Python dependencies are frozen in the installation step
     # Note: IPython is among the frozen package
