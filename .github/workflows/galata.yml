@@ -28,19 +28,19 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox]
+        shard: [1, 2, 3, 4, 5]
+        shards: [5]
         include:
           - browser: chromium
             project: jupyterlab
-            shard: [1, 2, 3, 4, 5]
-            shars: 5
           - browser: chromium
             project: galata
             shard: [1, 2]
-            shars: 2
+            shards: 2
           - browser: firefox
             project: jupyterlab-firefox
             shard: [1, 2, 3]
-            shars: 3
+            shards: 3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
