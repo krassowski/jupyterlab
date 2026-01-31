@@ -169,6 +169,7 @@ jobs:
 
       - name: Merge and upload test results
         if: ${{ !cancelled() }}
+        continue-on-error: true  # this is expected to fail if no of the tests failed
         uses: actions/upload-artifact/merge@v4
         with:
           name: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}
