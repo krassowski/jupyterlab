@@ -124,6 +124,7 @@ jobs:
     needs: test
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
         include:
           - browser: chromium
@@ -155,7 +156,7 @@ jobs:
         run: |
           mkdir -p merged-reports
 
-          npx playwright merge-reports --reporter html,github artifacts/blob-report
+          npx playwright merge-reports --reporter html,github ./artifacts/
           mv merged-reports/${{ matrix.browser }}
 
       - name: Debug - Check merged reports
