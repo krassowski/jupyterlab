@@ -5,10 +5,9 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 
 // Default Playwright configuration for JupyterLab
 module.exports = {
-  reporter: [
-    [process.env.CI ? 'github' : 'list'],
-    process.env.CI ? ['blob'] : ['html', { open: 'on-failure' }]
-  ],
+  reporter: process.env.CI
+    ? [['blob']]
+    : [['list'], ['html', { open: 'on-failure' }]],
   reportSlowTests: null,
   timeout: 60000,
   use: {
