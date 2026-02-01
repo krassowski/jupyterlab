@@ -152,9 +152,20 @@ jobs:
           name: galata-report-${{ matrix.browser }}-${{ matrix.project }}
           path: playwright-report
 
+      - name: Check for test assets
+        id: check-assets
+        run: |
+          COUNT=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate \
+            -q '.artifacts[] | select(.name | startswith("galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}-")) | .name' \
+            | wc -l)
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Found $COUNT test asset artifacts"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Merge and upload test results
-        if: ${{ !cancelled() }}
-        continue-on-error: true  # this is expected to fail if no of the tests failed
+        if: ${{ !cancelled() && steps.check-assets.outputs.count > 0 }}
         uses: actions/upload-artifact/merge@v4
         with:
           name: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}
