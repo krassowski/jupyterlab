@@ -173,6 +173,7 @@ jobs:
           name: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}
           pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
           delete-merged: true
+          retention-days: 1
 
   test-documentation:
     name: Visual Regression Documentation
