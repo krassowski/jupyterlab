@@ -83,12 +83,11 @@ jobs:
       - name: Test
         run: |
           cd galata
-          # TODO remove --max-failures its only for now to help debug
-          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/${{ matrix.shards }} --max-failures=1
+          jlpm run test --project ${{ matrix.project }} --shard ${{ matrix.shard }}/${{ matrix.shards }}
 
           if [[ "${{ matrix.browser }}" == "chromium" ]] && [[ "${{ matrix.shard }}" == "1" ]]; then
             # Run benchmark tests once to ensure they have no regressions
-            BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark --max-failures=1
+            BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark
             # Move benchmark report
             mv playwright-report playwright-report-benchmark || true
           fi
