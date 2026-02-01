@@ -78,7 +78,7 @@ jobs:
           jlpm run build
 
       - name: Wait for JupyterLab
-        run: npx wait-on@7.2.0 http-get://localhost:8888/lab -t 360000
+        run: timeout 360 bash -c 'until curl -f http://localhost:8888/lab > /dev/null 2>&1; do sleep 1; done'
 
       - name: Test
         run: |
@@ -254,7 +254,7 @@ jobs:
         working-directory: core
 
       - name: Wait for JupyterLab
-        run: npx wait-on@7.2.0 http-get://localhost:8888/lab -t 360000
+        run: timeout 360 bash -c 'until curl -f http://localhost:8888/lab > /dev/null 2>&1; do sleep 1; done'
 
       - name: Test
         run: |
