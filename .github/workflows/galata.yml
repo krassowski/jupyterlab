@@ -47,6 +47,7 @@ jobs:
       - name: Find out Playwright version
         id: pw-version
         run: |
+          set -e
           PW_VERSION=$(grep -m1 "playwright@" yarn.lock)
           echo "Playwright version: $PW_VERSION"
           echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
@@ -216,6 +217,7 @@ jobs:
       - name: Find out Playwright version
         id: pw-version
         run: |
+          set -e
           PW_VERSION=$(grep -m1 "playwright@" yarn.lock)
           echo "Playwright version: $PW_VERSION"
           echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
