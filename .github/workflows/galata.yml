@@ -54,8 +54,7 @@ jobs:
       - name: Set up browser cache
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/pw-browsers
+          path: ${{ github.workspace }}/pw-browsers
           key: ${{ runner.os }}-${{ matrix.browser }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install dependencies
@@ -74,9 +73,8 @@ jobs:
       - name: Install browser
         run: |
           cd galata
-          jlpm playwright install-deps
           # Install only the relevant browser for this matrix job
-          jlpm playwright install ${{ matrix.browser }}
+          jlpm playwright install --with-deps ${{ matrix.browser }}
           jlpm run build
 
       - name: Wait for JupyterLab
@@ -205,12 +203,18 @@ jobs:
       - name: Base Setup
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
 
+      - name: Find out Playwright version
+        id: pw-version
+        run: |
+          PW_VERSION=$(grep -m1 "playwright@" yarn.lock)
+          echo "Playwright version: $PW_VERSION"
+          echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
+
       - name: Set up browser cache
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/pw-browsers
-          key: ${{ runner.os }}-${{ hashFiles('ui-tests/yarn.lock') }}
+          path: ${{ github.workspace }}/pw-browsers
+          key: ${{ runner.os }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install dependencies
         run: |
@@ -244,9 +248,8 @@ jobs:
         run: |
           set -ex
           cd galata
-          jlpm playwright install-deps
           # Install only Chromium browser
-          jlpm playwright install chromium
+          jlpm playwright install --with-deps chromium
           jlpm run build
         working-directory: core
 
