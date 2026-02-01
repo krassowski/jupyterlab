@@ -147,19 +147,9 @@ jobs:
           pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
           merge-multiple: true
 
-      - name: Debug - List downloaded artifacts
-        run: |
-          echo "=== Contents of artifacts directory ==="
-          ls -la artifacts/ || echo "artifacts directory not found"
-
       - name: Merge Playwright reports
         run: |
           npx playwright merge-reports --reporter html,github ./artifacts/
-
-      - name: Debug - Check merged reports
-        if: always()
-        run: |
-          ls -la .
 
       - name: Upload merged reports
         uses: actions/upload-artifact@v6
