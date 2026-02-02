@@ -271,7 +271,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: jupyterlab-documentation-test-assets
+          name: documentation-test-assets
           path: |
             core/galata/test-results
 
@@ -279,7 +279,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: jupyterlab-documentation-report
+          name: documentation-report
           path: |
             core/galata/playwright-report
 
