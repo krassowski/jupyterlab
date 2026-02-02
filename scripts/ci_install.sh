@@ -30,7 +30,7 @@ git config --global user.email foo@bar.com
 pip install -q --upgrade pip --user
 pip --version
 
-if [[ "${PLAYWRIGHT}" == "true" ]]; then
+if [[ "${IS_PLAYWRIGHT_RUN}" == "true" ]]; then
     # Show a verbose install if the install fails, for debugging
     # No need to install test dependencies for Playwright run
     pip install -e ".[dev]" || pip install -v -e ".[dev]"

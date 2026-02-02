@@ -12,6 +12,7 @@ on:
 
 env:
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
+  IS_PLAYWRIGHT: true
 
 jobs:
   test:
