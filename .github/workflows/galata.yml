@@ -16,7 +16,7 @@ env:
 jobs:
   test:
     name: Integration Tests (${{ matrix.browser }} - ${{ matrix.suite }} ${{ matrix.shard }}/${{ matrix.shards }})
-    timeout-minutes: 60
+    timeout-minutes: 30
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -180,7 +180,7 @@ jobs:
     # Python version is frozen through strategy.matrix.python-version
     # Python dependencies are frozen in the installation step
     # Note: IPython is among the frozen package
-    timeout-minutes: 80
+    timeout-minutes: 30
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -271,16 +271,16 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: documentation-test-assets
-          path: |
-            core/galata/test-results
+          path: core/galata/test-results
+          if-no-files-found: ignore  # expected when no tests fail (at all)
 
       - name: Upload Galata Test report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: documentation-report
-          path: |
-            core/galata/playwright-report
+          path: core/galata/playwright-report
+          if-no-files-found: ignore  # expected when no tests fail (after retries)
 
       - name: Stop JupyterLab
         if: always()
