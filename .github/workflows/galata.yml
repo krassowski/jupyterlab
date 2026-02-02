@@ -12,7 +12,6 @@ on:
 
 env:
   PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
-  IS_PLAYWRIGHT: true
 
 jobs:
   test:
@@ -63,6 +62,8 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.browser }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install dependencies
+        env:
+          OPTIONAL_DEPENDENCIES: ""
         run: |
           bash ./scripts/ci_install.sh
 
@@ -222,6 +223,8 @@ jobs:
           key: ${{ runner.os }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install dependencies
+        env:
+          OPTIONAL_DEPENDENCIES: "docs-screenshots"
         run: |
           set -ex
           # Install chinese font
@@ -231,11 +234,8 @@ jobs:
           # Freeze the packages to ensure consistent look and feel
           # IPython is frozen because its version is displayed in
           # the console header
-          pip install .[docs-screenshots] 'ipykernel<7.0'
+          pip install 'ipykernel<7.0'
           bash ./scripts/ci_install.sh
-
-          # Build dev-mode
-          jlpm run build
         working-directory: core
 
       - name: Launch JupyterLab

@@ -30,14 +30,14 @@ git config --global user.email foo@bar.com
 pip install -q --upgrade pip --user
 pip --version
 
-if [[ "${IS_PLAYWRIGHT_RUN}" == "true" ]]; then
-    # Show a verbose install if the install fails, for debugging
-    # No need to install test dependencies for Playwright run
-    pip install -e ".[dev]" || pip install -v -e ".[dev]"
+if [[ -n "${OPTIONAL_DEPENDENCIES}" ]]; then
+    SPEC=".[${OPTIONAL_DEPENDENCIES}]"
 else
-    # Show a verbose install if the install fails, for debugging
-    pip install -e ".[dev,test]" || pip install -v -e ".[dev,test]"
+    SPEC="."
 fi
+
+# Show a verbose install if the install fails, for debugging
+pip install -e "${SPEC}" || pip install -v -e "${SPEC}"
 
 node -p process.versions
 jlpm config
