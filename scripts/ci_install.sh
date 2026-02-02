@@ -29,8 +29,16 @@ git config --global user.email foo@bar.com
 # Install and enable the server extension
 pip install -q --upgrade pip --user
 pip --version
-# Show a verbose install if the install fails, for debugging
-pip install -e ".[dev,test]" || pip install -v -e ".[dev,test]"
+
+if [[ "${PLAYWRIGHT}" == "true" ]]; then
+    # Show a verbose install if the install fails, for debugging
+    # No need to install test dependencies for Playwright run
+    pip install -e ".[dev]" || pip install -v -e ".[dev]"
+else
+    # Show a verbose install if the install fails, for debugging
+    pip install -e ".[dev,test]" || pip install -v -e ".[dev,test]"
+fi
+
 node -p process.versions
 jlpm config
 
