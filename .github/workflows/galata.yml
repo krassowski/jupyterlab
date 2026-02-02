@@ -123,12 +123,6 @@ jobs:
     needs: test
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Base Setup
-        uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
