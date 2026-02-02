@@ -78,9 +78,15 @@ jobs:
 
       - name: Install browser
         run: |
+          set -ex
           cd galata
           # Install only the relevant browser for this matrix job
           jlpm playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Build galata
+        run: |
+          set -ex
+          cd galata
           jlpm run build
 
       - name: Wait for JupyterLab
@@ -168,6 +174,7 @@ jobs:
           pattern: galata-blobs-*
           delete-merged: true
           retention-days: 1
+          compression-level: 1
 
   test-documentation:
     name: Visual Regression Documentation
@@ -248,6 +255,12 @@ jobs:
           cd galata
           # Install only Chromium browser
           jlpm playwright install --with-deps chromium
+        working-directory: core
+
+      - name: Build galata
+        run: |
+          set -ex
+          cd galata
           jlpm run build
         working-directory: core
 
