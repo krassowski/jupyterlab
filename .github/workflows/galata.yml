@@ -15,7 +15,7 @@ env:
 
 jobs:
   test:
-    name: Integration Tests (${{ matrix.browser }} - ${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
+    name: Integration Tests (${{ matrix.browser }} - ${{ matrix.suite }} ${{ matrix.shard }}/${{ matrix.shards }})
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     strategy:
@@ -27,14 +27,17 @@ jobs:
         include:
           - browser: chromium
             project: jupyterlab
+            suite: jupyterlab
           - browser: firefox
             project: jupyterlab-firefox
+            suite: jupyterlab
           - browser: chromium
             project: galata
             shard: 1
             shards: 2
           - browser: chromium
             project: galata
+            suite: galata
             shard: 2
             shards: 2
     steps:
@@ -89,10 +92,8 @@ jobs:
           if [[ "${{ matrix.browser }}" == "chromium" ]] && [[ "${{ matrix.shard }}" == "1" ]]; then
             # Run benchmark tests once to ensure they have no regressions
             BENCHMARK_NUMBER_SAMPLES=1 jlpm run test:benchmark
-            # Move benchmark report
-            mv playwright-report playwright-report-benchmark || true
           fi
-      - name: Upload Galata Test assets
+      - name: Upload test assets
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
@@ -100,7 +101,7 @@ jobs:
           path: galata/test-results
           if-no-files-found: ignore  # expected when no tests fail
 
-      - name: Upload Galata Test report
+      - name: Upload test report blob
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
@@ -115,20 +116,10 @@ jobs:
           cat /tmp/jupyterlab_server.log
 
   merge-reports:
-    name: Merge Test Reports and Results (${{ matrix.browser }}, ${{ matrix.project }})
+    name: Merge Test Reports and Results
     if: ${{ !cancelled() }}
     needs: test
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - browser: chromium
-            project: galata
-          - browser: chromium
-            project: jupyterlab
-          - browser: firefox
-            project: jupyterlab
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -140,7 +131,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
+          pattern: galata-blobs-*
           merge-multiple: true
 
       - name: Merge Playwright reports
@@ -150,7 +141,7 @@ jobs:
       - name: Upload merged reports
         uses: actions/upload-artifact@v6
         with:
-          name: galata-report-${{ matrix.browser }}-${{ matrix.project }}
+          name: visual-regression-report
           path: playwright-report
 
       - name: Check for test assets
@@ -158,7 +149,7 @@ jobs:
         run: |
           COUNT=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
             --paginate \
-            -q '.artifacts[] | select(.name | startswith("galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}-")) | .name' \
+            -q '.artifacts[] | select(.name | startswith("galata-test-assets-")) | .name' \
             | wc -l)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
           echo "Found $COUNT test asset artifacts"
@@ -169,16 +160,16 @@ jobs:
         if: ${{ !cancelled() && steps.check-assets.outputs.count > 0 }}
         uses: actions/upload-artifact/merge@v4
         with:
-          name: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}
-          pattern: galata-test-assets-${{ matrix.browser }}-${{ matrix.project }}-*
+          name: visual-regression-test-assets
+          pattern: galata-test-assets-*
           delete-merged: true
 
       - name: Merge blobs and delete individual shards
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact/merge@v4
         with:
-          name: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}
-          pattern: galata-blobs-${{ matrix.browser }}-${{ matrix.project }}-*
+          name: visual-regression-blobs
+          pattern: galata-blobs-*
           delete-merged: true
           retention-days: 1
 
