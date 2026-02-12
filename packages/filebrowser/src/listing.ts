@@ -890,7 +890,7 @@ export class DirListing extends Widget {
     node.removeEventListener('dblclick', this);
     this._contentSizeObserver.disconnect();
     content.removeEventListener('scroll', this);
-    content.removeEventListener('dragover', this);
+    content.removeEventListener('dragenter', this);
     content.removeEventListener('dragover', this);
     content.removeEventListener('dragleave', this);
     content.removeEventListener('dragend', this);
