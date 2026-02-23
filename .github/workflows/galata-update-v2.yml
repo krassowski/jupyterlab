@@ -242,6 +242,7 @@ jobs:
       pull-requests: write
     outputs:
       pr-url: ${{ steps.open-pr.outputs.pr-url }}
+      pr-action: ${{ steps.open-pr.outputs.pr-action }}
     steps:
       - uses: actions/create-github-app-token@v2
         id: app-token
@@ -283,24 +284,39 @@ jobs:
           EOF
           )
 
-          # Open the PR
-          PR_URL=$(gh pr create \
+          # Reuse an existing matching PR when present, otherwise create one.
+          EXISTING_PR_URL=$(gh pr list \
+            --repo "$TARGET_REPO" \
+            --state open \
             --base "$BASE_REF" \
             --head "$HEAD_REF" \
-            --title "$PR_TITLE" \
-            --body "$PR_BODY" \
-            --repo "$TARGET_REPO")
+            --json url \
+            --jq '.[0].url')
+
+          if [ -n "$EXISTING_PR_URL" ] && [ "$EXISTING_PR_URL" != "null" ]; then
+            PR_URL="$EXISTING_PR_URL"
+            PR_ACTION="updated"
+          else
+            PR_URL=$(gh pr create \
+              --base "$BASE_REF" \
+              --head "$HEAD_REF" \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY" \
+              --repo "$TARGET_REPO")
+            PR_ACTION="created"
+          fi
 
           echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "Opened PR: $PR_URL"
+          echo "pr-action=$PR_ACTION" >> $GITHUB_OUTPUT
+          echo "Snapshot PR $PR_ACTION: $PR_URL"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
   comment-back:
     name: Comment back on the PR
     runs-on: ubuntu-slim
-    needs: [open-pr, create-branch]
-    if: always()
+    needs: [start-work, open-pr, create-branch]
+    if: needs.start-work.result == 'success' && always()
     environment: update-snapshots
     steps:
       - uses: actions/create-github-app-token@v2
@@ -320,6 +336,8 @@ jobs:
             BODY="No snapshot changes detected. [Workflow run](${RUN_URL})"
           elif [ "${{ needs.open-pr.result }}" != "success" ]; then
             BODY="Snapshot changes were prepared, but opening the snapshot update PR failed. [Workflow run](${RUN_URL})"
+          elif [ "${{ needs.open-pr.outputs.pr-action }}" = "updated" ]; then
+            BODY="Snapshot update PR updated: ${{ needs.open-pr.outputs.pr-url }}"
           else
             BODY="Snapshot update PR created: ${{ needs.open-pr.outputs.pr-url }}"
           fi
