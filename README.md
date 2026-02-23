@@ -5,7 +5,7 @@
 **[Team](#team)** |
 **[Getting help](#getting-help)** |
 
-# [JupyterLab](https://jupyterlab.readthedocs.io)
+# [xJupyterLab](https://jupyterlab.readthedocs.io)
 
 [![PyPI version](https://badge.fury.io/py/jupyterlab.svg)](https://badge.fury.io/py/jupyterlab)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/jupyterlab?period=monthly&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/jupyterlab)
