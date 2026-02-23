@@ -10,7 +10,7 @@ snapshot images from the test-results directory, placing them in the correct
 snapshot directories based on the test file locations.
 
 Format:
-    python scripts/unpack_snapshots.py [--test-assets-dir <path>] [--dry-run]
+    python scripts/unpack_snapshots.py [test_assets_dir] [--dry-run]
 """
 
 import argparse
@@ -26,12 +26,14 @@ def parse_arguments() -> argparse.Namespace:
         description="Process Playwright test reports and unpack snapshots"
     )
     parser.add_argument(
-        "--test-assets-dir",
+        "test_assets_dir",
+        nargs="?",
         type=Path,
         default=Path("galata/test-results"),
-        help="Path to the downloaded artifact directory",
+        help="Path to the downloaded artifact directory (positional)",
     )
     parser.add_argument(
+        "-d",
         "--dry-run",
         action="store_true",
         help="Print what would be done without making changes",
@@ -149,17 +151,19 @@ def process_report(report: dict, artifact_dir: Path, dry_run: bool = False) -> i
     Returns the total number of snapshots processed.
     """
     total = 0
-    suites = report.get("suites", [])
     root_dir = report.get("config", {}).get("rootDir")
 
-    for suite in suites:
-        specs = suite.get("specs", [])
+    def walk_suites(suites: list[dict]) -> int:
+        count = 0
+        for suite in suites:
+            for spec in suite.get("specs", []):
+                for test in spec.get("tests", []):
+                    for result in test.get("results", []):
+                        count += process_result(result, artifact_dir, root_dir, dry_run)
+            count += walk_suites(suite.get("suites", []))
+        return count
 
-        for spec in specs:
-            tests = spec.get("tests", [])
-            for test in tests:
-                for result in test.get("results", []):
-                    total += process_result(result, artifact_dir, root_dir, dry_run)
+    total = walk_suites(report.get("suites", []))
 
     return total
 
@@ -175,7 +179,7 @@ def main():
 
     # Validate input directory
     if not args.test_assets_dir.exists():
-        sys.stdout.write(f"Error: Test results directory does not exist: {args.test_assets_dir}")
+        sys.stdout.write(f"Error: Test results directory does not exist: {args.test_assets_dir}\n")
         sys.exit(1)
 
     # Find JSON reports in the test results directory.
