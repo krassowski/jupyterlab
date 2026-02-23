@@ -177,8 +177,8 @@ jobs:
         id: create-branch
         run: |
           set -ex
-          DATE=$(date +%Y%m%d)
-          BRANCH_NAME="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}-snapshot-update-${DATE}"
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          BRANCH_NAME="snapshot-update/pr-${PR_NUMBER}"
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git config user.name "JupyterLab Bot"
           git config user.email "bot@jupyter.org"
