@@ -137,7 +137,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-branch:
-    name: Replace snapshots and create a branch
+    name: Replace snapshots
     needs: [get-snapshot-updates]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -176,6 +176,7 @@ jobs:
       - name: Create snapshot-update branch
         id: create-branch
         run: |
+          set -ex
           DATE=$(date +%Y%m%d)
           BRANCH_NAME="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}-snapshot-update-${DATE}"
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
@@ -183,9 +184,16 @@ jobs:
           git config user.email "bot@jupyter.org"
           git checkout -b "$BRANCH_NAME"
 
+      - name: Remove test assets and update script
+        run: |
+          set -ex
+          rm -f unpack_snapshots.py
+          rm -rf test-assets
+
       - name: Compress snapshots
         shell: bash -l {0}
         run: |
+          set -ex
           sudo apt install optipng
           # Apply compression only on new and modified versioned files
           # - this does not filter out deleted files but it should not happen.
@@ -196,9 +204,6 @@ jobs:
       - name: Stage allowed files and check for changes
         id: check-changes
         run: |
-          rm -f unpack_snapshots.py
-          rm -rf test-assets
-
           git add -- ':(glob)galata/**/*.png' ':(glob)galata/**/*.json'
 
           if git diff --cached --name-only | grep -Ev '^galata/.*\.(png|json)$' >/dev/null; then
@@ -227,7 +232,7 @@ jobs:
           git push origin ${{ steps.create-branch.outputs.branch-name }}
 
   open-pr:
-    name: Open a PR with snapshot updates
+    name: Open a new PR with updates
     runs-on: ubuntu-24.04
     needs: [get-snapshot-updates, create-branch]
     if: needs.create-branch.outputs.has-changes == 'true'
@@ -237,7 +242,6 @@ jobs:
       pull-requests: write
     outputs:
       pr-url: ${{ steps.open-pr.outputs.pr-url }}
-      pr-number: ${{ steps.open-pr.outputs.pr-number }}
     steps:
       - uses: actions/create-github-app-token@v2
         id: app-token
@@ -254,6 +258,8 @@ jobs:
       - name: Open Pull Request
         id: open-pr
         run: |
+          set -ex
+
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           if [ "${{ needs.get-snapshot-updates.outputs.is-pr-from-fork }}" = "true" ]; then
             TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
@@ -261,7 +267,7 @@ jobs:
             HEAD_REF="${{ github.repository_owner }}:${{ needs.create-branch.outputs.branch-name }}"
           else
             TARGET_REPO="${{ github.repository }}"
-            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-base-ref }}"
+            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
             HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
           fi
 
@@ -285,10 +291,7 @@ jobs:
             --body "$PR_BODY" \
             --repo "$TARGET_REPO")
 
-          PR_NUMBER=$(echo "$PR_URL" | grep -oP '#\K[0-9]+')
-
           echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Opened PR: $PR_URL"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
