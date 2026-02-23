@@ -229,13 +229,13 @@ jobs:
       - name: Push branch
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
-          git push origin ${{ steps.create-branch.outputs.branch-name }}
+          git push origin ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
 
   open-pr:
     name: Open a new PR with updates
     runs-on: ubuntu-24.04
     needs: [get-snapshot-updates, create-branch]
-    if: needs.create-branch.outputs.has-changes == 'true'
+    if: needs.create-branch.result == 'success' && needs.create-branch.outputs.has-changes == 'true'
     environment: update-snapshots
     permissions:
       contents: read
@@ -309,26 +309,27 @@ jobs:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: Comment back on the PR
-        if: needs.create-branch.outputs.has-changes == 'true'
+      - name: Compose comment message
+        id: compose-message
         run: |
-          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
-          PR_URL="${{ needs.open-pr.outputs.pr-url }}"
-          gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
-            --raw-field "body=Snapshot update PR created: ${PR_URL}"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      - name: Comment when no changes needed
-        if: needs.create-branch.outputs.has-changes == 'false'
-        run: |
-          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          BODY=$(cat <<EOF
-          No snapshot changes detected. [Workflow run](${RUN_URL})
-          EOF
-          )
+
+          if [ "${{ needs.create-branch.result }}" != "success" ]; then
+            BODY="Snapshot update failed while preparing or pushing the update branch. [Workflow run](${RUN_URL})"
+          elif [ "${{ needs.create-branch.outputs.has-changes }}" = "false" ]; then
+            BODY="No snapshot changes detected. [Workflow run](${RUN_URL})"
+          elif [ "${{ needs.open-pr.result }}" != "success" ]; then
+            BODY="Snapshot changes were prepared, but opening the snapshot update PR failed. [Workflow run](${RUN_URL})"
+          else
+            BODY="Snapshot update PR created: ${{ needs.open-pr.outputs.pr-url }}"
+          fi
+
+          echo "body=$BODY" >> $GITHUB_OUTPUT
+
+      - name: Comment back on the PR
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
-            --raw-field "body=${BODY}"
+            --raw-field "body=${{ steps.compose-message.outputs.body }}"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
