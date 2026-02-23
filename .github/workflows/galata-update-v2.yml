@@ -314,7 +314,7 @@ jobs:
           gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
             --raw-field "body=Snapshot update PR created: ${PR_URL}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Comment when no changes needed
         if: needs.create-branch.outputs.has-changes == 'false'
@@ -328,4 +328,4 @@ jobs:
           gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
             --raw-field "body=${BODY}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
