@@ -1,0 +1,318 @@
+name: Update Playwright Snapshots
+
+on:
+  # act on comments on PR
+  issue_comment:
+    types: [created, edited]
+  # act on review body (the "main" review comment)
+  pull_request_review:
+    types: [submitted, edited]
+  # act on individual review comments
+  pull_request_review_comment:
+    types: [created, edited]
+
+# Disable permissions for all of the available permissions.
+permissions: {}
+
+jobs:
+  start-work:
+    name: Start work
+    if: >
+      (github.event.issue.pull_request || github.event.pull_request) &&
+      (
+        contains(github.event.comment.body || github.event.review.body || '', 'would you be so kind as to update galata snapshots please') ||
+        contains(github.event.comment.body || github.event.review.body || '', 'would you be so kind as to update snapshots please')
+      )
+    runs-on: ubuntu-slim
+    permissions:
+      # leave a reaction whether this is a comment on PR or a review comment
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: React positively to the triggering comment
+        shell: bash -l {0}
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request_review" ]]; then
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/${{ github.event.review.id }}/reactions --raw-field 'content=+1'
+          else
+            gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions --raw-field 'content=+1'
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  get-snapshot-updates:
+    name: Fetch snapshots from PR
+    runs-on: ubuntu-24.04
+    needs: [start-work]
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      pr-base-ref: ${{ steps.get-pr-info.outputs.base-ref }}
+      pr-head-ref: ${{ steps.get-pr-info.outputs.head-ref }}
+      pr-head-repo: ${{ steps.get-pr-info.outputs.head-repo }}
+      pr-head-owner: ${{ steps.get-pr-info.outputs.head-owner }}
+      is-pr-from-fork: ${{ steps.get-pr-info.outputs.is-pr-from-fork }}
+    steps:
+      - name: Get PR information
+        id: get-pr-info
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
+          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
+          HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
+          HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
+          HEAD_OWNER=$(echo "$PR_DATA" | jq -r '.head.repo.owner.login')
+          IS_PR_FROM_FORK=$(echo "$PR_DATA" | jq -r --arg repo "${{ github.repository }}" '.head.repo.full_name != $repo')
+          echo "base-ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "head-ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head-repo=$HEAD_REPO" >> $GITHUB_OUTPUT
+          echo "head-owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
+          echo "is-pr-from-fork=$IS_PR_FROM_FORK" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for galata-test-assets-merged artifact
+        id: download
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          ARTIFACT_NAME="galata-test-assets-merged"
+          MAX_WAIT=1800  # 30 minutes
+          ELAPSED=0
+
+          echo "Waiting for artifact: $ARTIFACT_NAME from PR #$PR_NUMBER"
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            echo "Checking for artifact... (elapsed: ${ELAPSED}s)"
+
+            # Get the latest workflow run for this PR
+            RUNS=$(gh run list \
+              --repo ${{ github.repository }} \
+              --workflow galata.yml \
+              --branch refs/pull/$PR_NUMBER/merge \
+              --status completed \
+              --json databaseId \
+              --limit 1)
+
+            if [ -z "$RUNS" ] || [ "$RUNS" = "[]" ]; then
+              # Try to download without specifying run
+              if gh run download \
+                --repo ${{ github.repository }} \
+                --name $ARTIFACT_NAME \
+                --dir ./artifact 2>/dev/null; then
+                echo "Artifact downloaded successfully"
+                exit 0
+              fi
+            else
+              RUN_ID=$(echo "$RUNS" | jq -r '.[0].databaseId' 2>/dev/null)
+              if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+                echo "Found workflow run: $RUN_ID"
+                if gh run download $RUN_ID \
+                  --repo ${{ github.repository }} \
+                  --name $ARTIFACT_NAME \
+                  --dir ./artifact 2>/dev/null; then
+                  echo "Artifact downloaded successfully from run $RUN_ID"
+                  exit 0
+                fi
+              fi
+            fi
+
+            # Wait before retrying
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+
+          echo "::error::Timeout waiting for artifact after ${MAX_WAIT}s"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-branch:
+    needs: [get-snapshot-updates]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    outputs:
+      branch-name: ${{ steps.create-branch.outputs.branch-name }}
+      has-changes: ${{ steps.check-changes.outputs.has-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
+          fetch-depth: 0
+
+      - name: Download test results
+        run: |
+          gh run download --repo ${{ github.repository }} --name galata-test-assets-merged --dir ./test-assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get unpack_snapshots.py from the main repo
+        run: |
+          git fetch origin refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}
+          git show origin/${{ github.event.repository.default_branch }}:scripts/unpack_snapshots.py > unpack_snapshots.py
+          chmod +x unpack_snapshots.py
+
+      - name: List tests assets
+        run: |
+          echo "Test assets contents:"
+          find ./test-assets -type f -name "*.json" -o -name "*.png"
+
+      - name: Process JSON reports and unpack snapshots
+        run: |
+          python unpack_snapshots.py --test-assets-dir ./test-assets
+
+      - name: Create snapshot-update branch
+        id: create-branch
+        run: |
+          DATE=$(date +%Y%m%d)
+          BRANCH_NAME="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}-snapshot-update-${DATE}"
+          echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          git config user.name "JupyterLab Bot"
+          git config user.email "bot@jupyter.org"
+          git checkout -b "$BRANCH_NAME"
+
+      - name: Compress snapshots
+        shell: bash -l {0}
+        run: |
+          sudo apt install optipng
+          # Apply compression only on new and modified versioned files
+          # - this does not filter out deleted files but it should not happen.
+          echo "::group::Optimize PNG files"
+          git ls-files --exclude-standard -om | grep -e "\.png$" | xargs optipng
+          echo "::endgroup::"
+
+      - name: Stage allowed files and check for changes
+        id: check-changes
+        run: |
+          rm -f unpack_snapshots.py
+          rm -rf test-assets
+
+          git add -- ':(glob)**/*.png' ':(glob)**/*.json'
+
+          if git diff --cached --name-only | grep -Ev '\.(png|json)$' >/dev/null; then
+            echo "::error::Only .png and .json files are allowed in this update"
+            git diff --cached --name-only
+            exit 1
+          fi
+
+          if git diff --cached --quiet; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected"
+          else
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected"
+            git diff --cached --name-status
+          fi
+
+      - name: Commit changes
+        if: steps.check-changes.outputs.has-changes == 'true'
+        run: |
+          git commit -m "Update snapshots"
+
+      - name: Push branch
+        if: steps.check-changes.outputs.has-changes == 'true'
+        run: |
+          git push origin ${{ steps.create-branch.outputs.branch-name }}
+
+  open-pr:
+    runs-on: ubuntu-24.04
+    needs: [get-snapshot-updates, create-branch]
+    if: needs.create-branch.outputs.has-changes == 'true'
+    environment: update-snapshots
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      pr-url: ${{ steps.open-pr.outputs.pr-url }}
+      pr-number: ${{ steps.open-pr.outputs.pr-number }}
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ needs.get-snapshot-updates.outputs.pr-head-owner }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create-branch.outputs.branch-name }}
+          fetch-depth: 1
+
+      - name: Open Pull Request
+        id: open-pr
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          if [ "${{ needs.get-snapshot-updates.outputs.is-pr-from-fork }}" = "true" ]; then
+            TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
+            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
+            HEAD_REF="${{ github.repository_owner }}:${{ needs.create-branch.outputs.branch-name }}"
+          else
+            TARGET_REPO="${{ github.repository }}"
+            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-base-ref }}"
+            HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
+          fi
+
+          # Create PR title and body
+          PR_TITLE="Update galata snapshots for PR #${PR_NUMBER}"
+          PR_BODY=$(cat <<EOF
+          ## Updates galata snapshots
+
+          This PR updates the galata test snapshots based on the test results from #${PR_NUMBER}.
+
+          **Source PR**: #${PR_NUMBER}
+          **Base branch**: ${BASE_REF}
+          EOF
+          )
+
+          # Open the PR
+          PR_URL=$(gh pr create \
+            --base "$BASE_REF" \
+            --head "$HEAD_REF" \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
+            --repo "$TARGET_REPO")
+
+          PR_NUMBER=$(echo "$PR_URL" | grep -oP '#\K[0-9]+')
+
+          echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "Opened PR: $PR_URL"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  comment-back:
+    runs-on: ubuntu-slim
+    needs: [open-pr, create-branch]
+    if: always()
+    permissions:
+      # we are leaving a top-level comment
+      issues: write
+    steps:
+      - name: Comment back on the PR
+        if: needs.create-branch.outputs.has-changes == 'true'
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          PR_URL="${{ needs.open-pr.outputs.pr-url }}"
+          gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
+            --raw-field "body=Snapshot update PR created: ${PR_URL}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment when no changes needed
+        if: needs.create-branch.outputs.has-changes == 'false'
+        run: |
+          PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY=$(cat <<EOF
+          No snapshot changes detected. [Workflow run](${RUN_URL})
+          EOF
+          )
+          gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
+            --raw-field "body=${BODY}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
