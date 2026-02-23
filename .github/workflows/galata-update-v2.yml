@@ -24,12 +24,14 @@ jobs:
         contains(github.event.comment.body || github.event.review.body || '', 'would you be so kind as to update snapshots please')
       )
     runs-on: ubuntu-slim
-    permissions:
-      # leave a reaction whether this is a comment on PR or a review comment
-      issues: write
-      pull-requests: write
-
+    environment: update-snapshots
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: React positively to the triggering comment
         shell: bash -l {0}
         run: |
@@ -39,10 +41,10 @@ jobs:
             gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions --raw-field 'content=+1'
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
   get-snapshot-updates:
-    name: Fetch snapshots from PR
+    name: Fetch test assets once ready
     runs-on: ubuntu-24.04
     needs: [start-work]
     timeout-minutes: 20
@@ -56,6 +58,7 @@ jobs:
       pr-head-repo: ${{ steps.get-pr-info.outputs.head-repo }}
       pr-head-owner: ${{ steps.get-pr-info.outputs.head-owner }}
       is-pr-from-fork: ${{ steps.get-pr-info.outputs.is-pr-from-fork }}
+      assets-run-id: ${{ steps.download.outputs.assets-run-id }}
     steps:
       - name: Get PR information
         id: get-pr-info
@@ -97,16 +100,7 @@ jobs:
               --json databaseId \
               --limit 1)
 
-            if [ -z "$RUNS" ] || [ "$RUNS" = "[]" ]; then
-              # Try to download without specifying run
-              if gh run download \
-                --repo ${{ github.repository }} \
-                --name $ARTIFACT_NAME \
-                --dir ./artifact 2>/dev/null; then
-                echo "Artifact downloaded successfully"
-                exit 0
-              fi
-            else
+            if [ -n "$RUNS" ] && [ "$RUNS" != "[]" ]; then
               RUN_ID=$(echo "$RUNS" | jq -r '.[0].databaseId' 2>/dev/null)
               if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
                 echo "Found workflow run: $RUN_ID"
@@ -115,6 +109,7 @@ jobs:
                   --name $ARTIFACT_NAME \
                   --dir ./artifact 2>/dev/null; then
                   echo "Artifact downloaded successfully from run $RUN_ID"
+                  echo "assets-run-id=$RUN_ID" >> $GITHUB_OUTPUT
                   exit 0
                 fi
               fi
@@ -131,6 +126,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-branch:
+    name: Replace snapshots and create a branch
     needs: [get-snapshot-updates]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -147,7 +143,7 @@ jobs:
 
       - name: Download test results
         run: |
-          gh run download --repo ${{ github.repository }} --name galata-test-assets-merged --dir ./test-assets
+          gh run download ${{ needs.get-snapshot-updates.outputs.assets-run-id }} --repo ${{ github.repository }} --name galata-test-assets-merged --dir ./test-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -192,10 +188,10 @@ jobs:
           rm -f unpack_snapshots.py
           rm -rf test-assets
 
-          git add -- ':(glob)**/*.png' ':(glob)**/*.json'
+          git add -- ':(glob)galata/**/*.png' ':(glob)galata/**/*.json'
 
-          if git diff --cached --name-only | grep -Ev '\.(png|json)$' >/dev/null; then
-            echo "::error::Only .png and .json files are allowed in this update"
+          if git diff --cached --name-only | grep -Ev '^galata/.*\.(png|json)$' >/dev/null; then
+            echo "::error::Only galata/*.png and galata/*.json files are allowed in this update"
             git diff --cached --name-only
             exit 1
           fi
@@ -220,6 +216,7 @@ jobs:
           git push origin ${{ steps.create-branch.outputs.branch-name }}
 
   open-pr:
+    name: Open a PR with snapshot updates
     runs-on: ubuntu-24.04
     needs: [get-snapshot-updates, create-branch]
     if: needs.create-branch.outputs.has-changes == 'true'
@@ -286,13 +283,18 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
   comment-back:
+    name: Comment back on the PR
     runs-on: ubuntu-slim
     needs: [open-pr, create-branch]
     if: always()
-    permissions:
-      # we are leaving a top-level comment
-      issues: write
+    environment: update-snapshots
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Comment back on the PR
         if: needs.create-branch.outputs.has-changes == 'true'
         run: |
