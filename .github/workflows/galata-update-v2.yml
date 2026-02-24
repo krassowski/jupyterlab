@@ -140,10 +140,10 @@ jobs:
           git config --global user.name 'galata-snapshots-bot'
           git config --global user.email '263663552+galata-snapshots-bot@users.noreply.github.com'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
-          fetch-depth: 0
+          fetch-depth: 1
           token: ${{ secrets.BOT_USER_PAT }}
 
       - name: Download test results
@@ -221,7 +221,6 @@ jobs:
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
           gh repo fork --default-branch-only
-          git remote add bot https://x-access-token:${{ secrets.BOT_USER_PAT }}@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
         env:
           GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
@@ -241,7 +240,7 @@ jobs:
       pr-action: ${{ steps.open-pr.outputs.pr-action }}
     steps:
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.create-branch.outputs.branch-name }}
           repository: galata-snapshots-bot/${{ github.event.repository.name }}
