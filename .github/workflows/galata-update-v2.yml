@@ -31,8 +31,7 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-issues: write  # for reacting to a comment left on PR
-          permission-pull-requests: write  # for reacting to a review comment left on PR
+          permission-pull-requests: write  # for reacting to a comment left on PR
 
       - name: React positively to the triggering comment
         shell: bash -l {0}
@@ -341,7 +340,7 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-issues: write  # for leaving a comment on PR
+          permission-pull-requests: write  # for leaving a comment on PR
 
       - name: Compose comment message
         id: compose-message
