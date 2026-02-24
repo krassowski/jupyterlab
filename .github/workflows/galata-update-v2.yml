@@ -170,7 +170,7 @@ jobs:
 
       - name: Process JSON reports and unpack snapshots
         run: |
-          python ../tools/scripts/unpack_snapshots.py ./test-assets
+          python ../tools/scripts/unpack_snapshots.py ../test-assets
         working-directory: repo
 
       - name: Create snapshot-update branch
