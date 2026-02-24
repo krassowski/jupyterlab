@@ -846,7 +846,7 @@ const openWithPlugin: JupyterFrontEndPlugin<void> = {
  * @jupyterlab/docmanager-extension:open-browser-tab
  */
 const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
-  id: '@jupyterlab/filebrowser-extension:open-browser-tab',
+  id: '@jupyterlab/filebrowser-extension:open-a-browser-tab',
   description: 'Adds the open-in-new-browser-tab features.',
   requires: [IFileBrowserFactory, ITranslator],
   autoStart: true,
