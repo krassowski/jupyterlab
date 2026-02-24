@@ -60,6 +60,7 @@ jobs:
           HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
           echo "head-ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head-repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "head-owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
