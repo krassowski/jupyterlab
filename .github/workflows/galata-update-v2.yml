@@ -1,4 +1,4 @@
-name: Update Playwright Snapshots
+name: Create snapshot update PR
 
 on:
   # act on comments on PR
@@ -256,7 +256,7 @@ jobs:
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
           TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
-          HEAD_REF="galata-snapshots-bot:${{ needs.create-branch.outputs.branch-name }}"
+          HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
 
           # Create PR title and body
           PR_TITLE="Update galata snapshots for PR #${PR_NUMBER}"
@@ -285,7 +285,7 @@ jobs:
           else
             PR_URL=$(gh pr create \
               --base "$BASE_REF" \
-              --head "$HEAD_REF" \
+              --head "galata-snapshots-bot:$HEAD_REF" \
               --title "$PR_TITLE" \
               --body "$PR_BODY" \
               --repo "$TARGET_REPO")
