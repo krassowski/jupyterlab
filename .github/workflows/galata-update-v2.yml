@@ -26,13 +26,6 @@ jobs:
     runs-on: ubuntu-slim
     environment: update-snapshots
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-pull-requests: write  # for reacting to a comment left on PR
-
       - name: React positively to the triggering comment
         shell: bash -l {0}
         run: |
@@ -44,7 +37,7 @@ jobs:
             gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions --raw-field 'content=+1'
           fi
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
   get-snapshot-updates:
     name: Fetch test assets once ready
@@ -55,11 +48,8 @@ jobs:
       actions: read  # for querying the test-results artifact
       pull-requests: read  # for getting the PR info
     outputs:
-      pr-base-ref: ${{ steps.get-pr-info.outputs.base-ref }}
       pr-head-ref: ${{ steps.get-pr-info.outputs.head-ref }}
       pr-head-repo: ${{ steps.get-pr-info.outputs.head-repo }}
-      pr-head-owner: ${{ steps.get-pr-info.outputs.head-owner }}
-      is-pr-from-fork: ${{ steps.get-pr-info.outputs.is-pr-from-fork }}
       assets-run-id: ${{ steps.download.outputs.assets-run-id }}
     steps:
       - name: Get PR information
@@ -67,16 +57,10 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
-          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
           HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
-          HEAD_OWNER=$(echo "$PR_DATA" | jq -r '.head.repo.owner.login')
-          IS_PR_FROM_FORK=$(echo "$PR_DATA" | jq -r --arg repo "${{ github.repository }}" '.head.repo.full_name != $repo')
-          echo "base-ref=$BASE_REF" >> $GITHUB_OUTPUT
           echo "head-ref=$HEAD_REF" >> $GITHUB_OUTPUT
-          echo "head-repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "head-owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
-          echo "is-pr-from-fork=$IS_PR_FROM_FORK" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -149,30 +133,18 @@ jobs:
       has-changes: ${{ steps.check-changes.outputs.has-changes }}
     permissions:
       actions: read  # for download of the test results
+
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-contents: write  # for checkout and push to a (new or existing) branch
-
-      - name: Get GitHub App user ID
-        id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
       - name: Configure committer identity
         run: |
-          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
-          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git config --global user.name 'galata-snapshots-bot'
+          git config --global user.email '263663552+galata-snapshots-bot@users.noreply.github.com'
 
       - uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.BOT_USER_PAT }}
 
       - name: Download test results
         run: |
@@ -245,10 +217,16 @@ jobs:
           # We do not want pre-commit to run in case if user code modifies it
           git commit -m "Update snapshots" --no-verify
 
-      - name: Push branch
+      - name: Ensure fork exists
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
-          git push origin ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
+          gh repo fork
+          git remote add bot https://x-access-token:${{ secrets.BOT_USER_PAT }}@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
+
+      - name: Push to bot fork
+        if: steps.check-changes.outputs.has-changes == 'true'
+        run: |
+          git push bot ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
 
   open-pr:
     name: Open a new PR with updates
@@ -260,20 +238,13 @@ jobs:
       pr-url: ${{ steps.open-pr.outputs.pr-url }}
       pr-action: ${{ steps.open-pr.outputs.pr-action }}
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ needs.get-snapshot-updates.outputs.pr-head-owner }}
-          permission-pull-requests: write # for opening a PR
-          permission-contents: read # for checkout of the branch
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.create-branch.outputs.branch-name }}
+          repository: galata-snapshots-bot/${{ github.event.repository.name }}
           fetch-depth: 1
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.BOT_USER_PAT }}
 
       - name: Open Pull Request
         id: open-pr
@@ -281,15 +252,9 @@ jobs:
           set -ex
 
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
-          if [ "${{ needs.get-snapshot-updates.outputs.is-pr-from-fork }}" = "true" ]; then
-            TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
-            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
-            HEAD_REF="${{ github.repository_owner }}:${{ needs.create-branch.outputs.branch-name }}"
-          else
-            TARGET_REPO="${{ github.repository }}"
-            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
-            HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
-          fi
+          BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
+          TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
+          HEAD_REF="galata-snapshots-bot:${{ needs.create-branch.outputs.branch-name }}"
 
           # Create PR title and body
           PR_TITLE="Update galata snapshots for PR #${PR_NUMBER}"
@@ -329,7 +294,7 @@ jobs:
           echo "pr-action=$PR_ACTION" >> $GITHUB_OUTPUT
           echo "Snapshot PR $PR_ACTION: $PR_URL"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
   comment-back:
     name: Comment back on the PR
@@ -338,13 +303,6 @@ jobs:
     if: needs.start-work.result == 'success' && always()
     environment: update-snapshots
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-pull-requests: write  # for leaving a comment on PR
-
       - name: Compose comment message
         id: compose-message
         run: |
@@ -372,4 +330,4 @@ jobs:
           gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
             --raw-field "body=${{ steps.compose-message.outputs.body }}"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
