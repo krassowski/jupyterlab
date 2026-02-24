@@ -48,11 +48,8 @@ jobs:
       actions: read  # for querying the test-results artifact
       pull-requests: read  # for getting the PR info
     outputs:
-      pr-base-ref: ${{ steps.get-pr-info.outputs.base-ref }}
       pr-head-ref: ${{ steps.get-pr-info.outputs.head-ref }}
       pr-head-repo: ${{ steps.get-pr-info.outputs.head-repo }}
-      pr-head-owner: ${{ steps.get-pr-info.outputs.head-owner }}
-      is-pr-from-fork: ${{ steps.get-pr-info.outputs.is-pr-from-fork }}
       assets-run-id: ${{ steps.download.outputs.assets-run-id }}
     steps:
       - name: Get PR information
@@ -60,16 +57,10 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
-          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
           HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
-          HEAD_OWNER=$(echo "$PR_DATA" | jq -r '.head.repo.owner.login')
-          IS_PR_FROM_FORK=$(echo "$PR_DATA" | jq -r --arg repo "${{ github.repository }}" '.head.repo.full_name != $repo')
-          echo "base-ref=$BASE_REF" >> $GITHUB_OUTPUT
           echo "head-ref=$HEAD_REF" >> $GITHUB_OUTPUT
-          echo "head-repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "head-owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
-          echo "is-pr-from-fork=$IS_PR_FROM_FORK" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -159,7 +150,7 @@ jobs:
         run: |
           gh run download ${{ needs.get-snapshot-updates.outputs.assets-run-id }} --repo ${{ github.repository }} --name galata-test-assets-merged --dir ./test-assets
         env:
-          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get unpack_snapshots.py from the main repo
         run: |
@@ -226,11 +217,16 @@ jobs:
           # We do not want pre-commit to run in case if user code modifies it
           git commit -m "Update snapshots" --no-verify
 
-      - name: Push branch
+      - name: Ensure fork exists
         if: steps.check-changes.outputs.has-changes == 'true'
-        # probably we want this to be pushed to a bot account
         run: |
-          git push origin ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
+          gh repo fork
+          git remote add bot https://x-access-token:${{ secrets.BOT_USER_PAT }}@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
+
+      - name: Push to bot fork
+        if: steps.check-changes.outputs.has-changes == 'true'
+        run: |
+          git push bot ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
 
   open-pr:
     name: Open a new PR with updates
@@ -246,6 +242,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.create-branch.outputs.branch-name }}
+          repository: galata-snapshots-bot/${{ github.event.repository.name }}
           fetch-depth: 1
           token: ${{ secrets.BOT_USER_PAT }}
 
@@ -255,15 +252,9 @@ jobs:
           set -ex
 
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
-          if [ "${{ needs.get-snapshot-updates.outputs.is-pr-from-fork }}" = "true" ]; then
-            TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
-            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
-            HEAD_REF="${{ github.repository_owner }}:${{ needs.create-branch.outputs.branch-name }}"
-          else
-            TARGET_REPO="${{ github.repository }}"
-            BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
-            HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
-          fi
+          BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
+          TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
+          HEAD_REF="galata-snapshots-bot:${{ needs.create-branch.outputs.branch-name }}"
 
           # Create PR title and body
           PR_TITLE="Update galata snapshots for PR #${PR_NUMBER}"
