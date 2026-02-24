@@ -60,6 +60,7 @@ jobs:
           HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
           echo "head-ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head-repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "head-owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -220,8 +221,10 @@ jobs:
       - name: Ensure fork exists
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
-          gh repo fork
+          gh repo fork --default-branch-only
           git remote add bot https://x-access-token:${{ secrets.BOT_USER_PAT }}@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
+        env:
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
       - name: Push to bot fork
         if: steps.check-changes.outputs.has-changes == 'true'
