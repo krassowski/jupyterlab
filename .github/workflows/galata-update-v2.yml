@@ -141,6 +141,7 @@ jobs:
     needs: [get-snapshot-updates]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment: update-snapshots
     outputs:
       branch-name: ${{ steps.create-branch.outputs.branch-name }}
       has-changes: ${{ steps.check-changes.outputs.has-changes }}
