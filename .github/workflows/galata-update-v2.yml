@@ -26,13 +26,6 @@ jobs:
     runs-on: ubuntu-slim
     environment: update-snapshots
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-pull-requests: write  # for reacting to a comment left on PR
-
       - name: React positively to the triggering comment
         shell: bash -l {0}
         run: |
@@ -44,7 +37,7 @@ jobs:
             gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions --raw-field 'content=+1'
           fi
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
   get-snapshot-updates:
     name: Fetch test assets once ready
@@ -149,36 +142,24 @@ jobs:
       has-changes: ${{ steps.check-changes.outputs.has-changes }}
     permissions:
       actions: read  # for download of the test results
+
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-contents: write  # for checkout and push to a (new or existing) branch
-
-      - name: Get GitHub App user ID
-        id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
       - name: Configure committer identity
         run: |
-          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
-          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git config --global user.name 'galata-snapshots-bot'
+          git config --global user.email '263663552+galata-snapshots-bot@users.noreply.github.com'
 
       - uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.BOT_USER_PAT }}
 
       - name: Download test results
         run: |
           gh run download ${{ needs.get-snapshot-updates.outputs.assets-run-id }} --repo ${{ github.repository }} --name galata-test-assets-merged --dir ./test-assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
       - name: Get unpack_snapshots.py from the main repo
         run: |
@@ -247,6 +228,7 @@ jobs:
 
       - name: Push branch
         if: steps.check-changes.outputs.has-changes == 'true'
+        # probably we want this to be pushed to a bot account
         run: |
           git push origin ${{ steps.create-branch.outputs.branch-name }} --force-with-lease
 
@@ -260,20 +242,12 @@ jobs:
       pr-url: ${{ steps.open-pr.outputs.pr-url }}
       pr-action: ${{ steps.open-pr.outputs.pr-action }}
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ needs.get-snapshot-updates.outputs.pr-head-owner }}
-          permission-pull-requests: write # for opening a PR
-          permission-contents: read # for checkout of the branch
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.create-branch.outputs.branch-name }}
           fetch-depth: 1
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.BOT_USER_PAT }}
 
       - name: Open Pull Request
         id: open-pr
@@ -329,7 +303,7 @@ jobs:
           echo "pr-action=$PR_ACTION" >> $GITHUB_OUTPUT
           echo "Snapshot PR $PR_ACTION: $PR_URL"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
   comment-back:
     name: Comment back on the PR
@@ -338,13 +312,6 @@ jobs:
     if: needs.start-work.result == 'success' && always()
     environment: update-snapshots
     steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-pull-requests: write  # for leaving a comment on PR
-
       - name: Compose comment message
         id: compose-message
         run: |
@@ -372,4 +339,4 @@ jobs:
           gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
             --raw-field "body=${{ steps.compose-message.outputs.body }}"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
