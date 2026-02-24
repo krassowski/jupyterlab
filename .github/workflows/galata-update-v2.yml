@@ -1,4 +1,4 @@
-name: Update Playwright Snapshots
+name: Create snapshot update PR
 
 on:
   # act on comments on PR
@@ -133,6 +133,7 @@ jobs:
       has-changes: ${{ steps.check-changes.outputs.has-changes }}
     permissions:
       actions: read  # for download of the test results
+      contents: read # to fetch unpack_snapshots.py
 
     steps:
       - name: Configure committer identity
@@ -140,11 +141,12 @@ jobs:
           git config --global user.name 'galata-snapshots-bot'
           git config --global user.email '263663552+galata-snapshots-bot@users.noreply.github.com'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
-          fetch-depth: 0
+          fetch-depth: 1
           token: ${{ secrets.BOT_USER_PAT }}
+          path: repo
 
       - name: Download test results
         run: |
@@ -152,18 +154,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get unpack_snapshots.py from the main repo
-        run: |
-          git fetch origin refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}
-          git show origin/${{ github.event.repository.default_branch }}:scripts/unpack_snapshots.py > unpack_snapshots.py
-
       - name: List tests assets
         run: |
           find ./test-assets -type f -name "*.json" -o -name "*.png"
 
+      - name: Get script for unpacking screenshots
+        uses: actions/checkout@v6
+        with:
+          # we fetch it from main to avoid running code from forks
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          sparse-checkout: scripts/unpack_snapshots.py
+          sparse-checkout-cone-mode: false
+          path: tools
+
       - name: Process JSON reports and unpack snapshots
         run: |
-          python unpack_snapshots.py ./test-assets
+          python ../tools/scripts/unpack_snapshots.py ../test-assets
+        working-directory: repo
 
       - name: Create snapshot-update branch
         id: create-branch
@@ -173,12 +181,7 @@ jobs:
           BRANCH_NAME="snapshot-update/pr-${PR_NUMBER}"
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git checkout -b "$BRANCH_NAME"
-
-      - name: Remove test assets and update script
-        run: |
-          set -ex
-          rm -f unpack_snapshots.py
-          rm -rf test-assets
+        working-directory: repo
 
       - name: Compress snapshots
         shell: bash -l {0}
@@ -190,6 +193,7 @@ jobs:
           echo "::group::Optimize PNG files"
           git ls-files --exclude-standard -om | grep -e "\.png$" | xargs optipng
           echo "::endgroup::"
+        working-directory: repo
 
       - name: Stage allowed files and check for changes
         id: check-changes
@@ -210,18 +214,21 @@ jobs:
             echo "Changes detected"
             git diff --cached --name-status
           fi
+        working-directory: repo
 
       - name: Commit changes
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
           # We do not want pre-commit to run in case if user code modifies it
           git commit -m "Update snapshots" --no-verify
+        working-directory: repo
 
       - name: Ensure fork exists
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
           gh repo fork --default-branch-only
-          git remote add bot https://x-access-token:${{ secrets.BOT_USER_PAT }}@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
+          git remote add bot https://@github.com/galata-snapshots-bot/${{ github.event.repository.name }}.git
+        working-directory: repo
         env:
           GH_TOKEN: ${{ secrets.BOT_USER_PAT }}
 
@@ -229,6 +236,7 @@ jobs:
         if: steps.check-changes.outputs.has-changes == 'true'
         run: |
           git push bot ${{ steps.create-branch.outputs.branch-name }} --force
+        working-directory: repo
 
   open-pr:
     name: Open a new PR with updates
@@ -241,7 +249,7 @@ jobs:
       pr-action: ${{ steps.open-pr.outputs.pr-action }}
     steps:
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.create-branch.outputs.branch-name }}
           repository: galata-snapshots-bot/${{ github.event.repository.name }}
@@ -256,7 +264,7 @@ jobs:
           PR_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
           BASE_REF="${{ needs.get-snapshot-updates.outputs.pr-head-ref }}"
           TARGET_REPO="${{ needs.get-snapshot-updates.outputs.pr-head-repo }}"
-          HEAD_REF="galata-snapshots-bot:${{ needs.create-branch.outputs.branch-name }}"
+          HEAD_REF="${{ needs.create-branch.outputs.branch-name }}"
 
           # Create PR title and body
           PR_TITLE="Update galata snapshots for PR #${PR_NUMBER}"
@@ -285,7 +293,7 @@ jobs:
           else
             PR_URL=$(gh pr create \
               --base "$BASE_REF" \
-              --head "$HEAD_REF" \
+              --head "galata-snapshots-bot:$HEAD_REF" \
               --title "$PR_TITLE" \
               --body "$PR_BODY" \
               --repo "$TARGET_REPO")
@@ -319,9 +327,9 @@ jobs:
           elif [ "${{ needs.open-pr.result }}" != "success" ]; then
             BODY="I prepared snapshot changes, but opening the snapshot update PR failed. [Workflow run](${RUN_URL})"
           elif [ "${{ needs.open-pr.outputs.pr-action }}" = "updated" ]; then
-            BODY="I updated the PR ${{ needs.open-pr.outputs.pr-url }} with the latest snapshots from [run ${ASSETS_RUN_ID}](${ASSETS_RUN_URL})."
+            BODY="I updated the PR ${{ needs.open-pr.outputs.pr-url }} with the latest snapshots from [run `${ASSETS_RUN_ID}`](${ASSETS_RUN_URL})."
           else
-            BODY="I created the PR ${{ needs.open-pr.outputs.pr-url }} with snapshots from [run ${ASSETS_RUN_ID}](${ASSETS_RUN_URL})."
+            BODY="I created the PR ${{ needs.open-pr.outputs.pr-url }} with snapshots from [run `${ASSETS_RUN_ID}`](${ASSETS_RUN_URL})."
           fi
 
           echo "body=$BODY" >> $GITHUB_OUTPUT
