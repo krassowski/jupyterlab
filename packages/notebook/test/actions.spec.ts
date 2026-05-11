@@ -2101,7 +2101,8 @@ describe('@jupyterlab/notebook', () => {
         }) => {
           const cell = widget.widgets[0] as CodeCell;
           widget.activeCellIndex = 0;
-          const initialSource = 'import time\ntime.sleep(10)';
+          const initialSource =
+            'import time\nfor i in range(10):\n    print(i)\n    time.sleep(1)';
           cell.model.sharedModel.setSource(initialSource);
 
           const running = new Promise<void>(resolve => {
@@ -2125,7 +2126,7 @@ describe('@jupyterlab/notebook', () => {
             'import time'
           );
           expect(secondSplitCell.model.sharedModel.getSource()).toBe(
-            'time.sleep(10)'
+            'for i in range(10):\n    print(i)\n    time.sleep(1)'
           );
           expect(firstSplitCell.model.sharedModel.executionState).toBe('idle');
           expect(secondSplitCell.model.sharedModel.executionState).toBe(
@@ -2160,17 +2161,26 @@ describe('@jupyterlab/notebook', () => {
           const secondCellModelAfterUndo = (widget.widgets[1] as CodeCell).model
             .sharedModel;
           expect(firstCellModelAfterUndo.getSource()).toBe('import time');
-          expect(secondCellModelAfterUndo.getSource()).toBe('time.sleep(10)');
+          expect(secondCellModelAfterUndo.getSource()).toBe(
+            'for i in range(10):\n    print(i)\n    time.sleep(1)'
+          );
           expect(firstCellModelAfterUndo.executionState).toBe('idle');
           expect(secondCellModelAfterUndo.executionState).toBe(
             secondCellExpectedState
           );
 
           if (!interrupt) {
+            const secondCellAfterUndo = widget.widgets[1] as CodeCell;
+            // Verify output keeps arriving in the reconnected cell.
+            await signalToPromise(secondCellAfterUndo.outputArea.model.changed);
+            expect(secondCellAfterUndo.outputArea.model.length).toBeGreaterThan(
+              0
+            );
             await kernel!.interrupt();
             await runPromise.catch(() => false);
           }
-        }
+        },
+        30000
       );
     });
 
