@@ -41,6 +41,7 @@ const READ_ONLY_MERGE_ERROR = 'The cell is read-only and cannot be merged.';
 const READ_ONLY_NOTIFICATION_AUTO_CLOSE = 5000;
 
 const JUPYTER_CELL_MIME = 'application/vnd.jupyter.cells';
+const STDOUT_TYPE = 'application/vnd.jupyter.stdout';
 
 const server = new JupyterServer();
 
@@ -57,6 +58,16 @@ function withNotificationError(action: () => void, message: string): void {
   } finally {
     notificationError.mockRestore();
   }
+}
+
+function waitForExecutionState(cell: CodeCell, state: IExecutionState) {
+  return new Promise<void>(resolve => {
+    cell.model.sharedModel.changed.connect((_, change) => {
+      if (change.executionStateChange?.newValue === state) {
+        resolve();
+      }
+    });
+  });
 }
 
 beforeAll(async () => {
@@ -2087,16 +2098,6 @@ describe('@jupyterlab/notebook', () => {
         expect(widget.widgets[1].model.sharedModel.getSource()).toBe('bar');
       });
 
-      function waitForExecutionState(cell: CodeCell, state: IExecutionState) {
-        return new Promise<void>(resolve => {
-          cell.model.sharedModel.changed.connect((_, change) => {
-            if (change.executionStateChange?.newValue === state) {
-              resolve();
-            }
-          });
-        });
-      }
-
       it.each([
         { interrupt: true, secondCellExpectedState: 'idle' as const },
         { interrupt: false, secondCellExpectedState: 'running' as const }
@@ -2183,13 +2184,17 @@ describe('@jupyterlab/notebook', () => {
             const output = secondCellAfterUndo.outputArea.model.get(0);
 
             const finalOutput = '0\n1\n2\n3\n4\n';
-            expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
-              finalOutput
-            );
+            expect(
+              finalOutput.startsWith(output.data[STDOUT_TYPE] as string)
+            ).toBe(true);
+            expect(output.data[STDOUT_TYPE]).not.toBe(finalOutput);
+            expect(secondCellAfterUndo.model.executionState).toBe('running');
+            expect(secondCellAfterUndo.model.executionCount).toBe(null);
+
             await executionCompleted;
-            expect(output.data['application/vnd.jupyter.stdout']).toBe(
-              finalOutput
-            );
+            expect(output.data[STDOUT_TYPE]).toBe(finalOutput);
+            expect(secondCellAfterUndo.model.executionState).toBe('idle');
+            expect(secondCellAfterUndo.model.executionCount).not.toBe(null);
           }
         },
         20000
@@ -2212,24 +2217,37 @@ describe('@jupyterlab/notebook', () => {
 
         await signalToPromise(cell.outputArea.model.changed);
         const outputBefore = cell.outputArea.model.get(0);
-        expect(outputBefore.data['application/vnd.jupyter.stdout']).not.toBe(
-          finalOutput
-        );
+        expect(outputBefore.data[STDOUT_TYPE]).not.toBe(finalOutput);
 
         NotebookActions.changeCellType(widget, 'markdown');
 
+        // Wait for one print to go to buffer - reproduces an issue where content
+        // streamed while the cell was removed would be lost.
         await sleep(1500);
 
+        // Undo cell type change
         NotebookActions.undo(widget);
         const cellAfterUndo = widget.widgets[0] as CodeCell;
+        expect(cellAfterUndo).toBeInstanceOf(CodeCell);
 
+        // Right now the cell is still executing so we should not see
+        // the final output just yet (only its prefix),
+        // and we should not see the execution count number yet.
         const output = cellAfterUndo.outputArea.model.get(0);
-        expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
-          finalOutput
+        expect(finalOutput.startsWith(output.data[STDOUT_TYPE] as string)).toBe(
+          true
         );
-        const inCompletedState = waitForExecutionState(cell, 'idle');
-        await Promise.all([inCompletedState, executionCompleted]);
-        expect(output.data['application/vnd.jupyter.stdout']).toBe(finalOutput);
+        expect(output.data[STDOUT_TYPE]).not.toBe(finalOutput);
+        expect(cellAfterUndo.model.executionState).toBe('running');
+        expect(cellAfterUndo.model.executionCount).toBe(null);
+
+        // Wait for cell to complete execution
+        const inIdleState = waitForExecutionState(cellAfterUndo, 'idle');
+        await Promise.all([inIdleState, executionCompleted]);
+        expect(output.data[STDOUT_TYPE]).toBe(finalOutput);
+
+        expect(cellAfterUndo.model.executionState).toBe('idle');
+        expect(cellAfterUndo.model.executionCount).not.toBe(null);
       }, 20000);
 
       it('should preserve execution state and output after undoing a cell deletion', async () => {
@@ -2250,20 +2268,30 @@ describe('@jupyterlab/notebook', () => {
 
         NotebookActions.deleteCells(widget);
 
+        // Undo cell deletion and find the relevant cell
         NotebookActions.undo(widget);
         const cellAfterUndo = widget.widgets.find(
           w => w.model.id === cellId
-        ) as CodeCell | undefined;
+        ) as CodeCell;
         expect(cellAfterUndo).toBeInstanceOf(CodeCell);
 
-        // Verify output keeps arriving after undo reconnects the future.
-        await signalToPromise(cellAfterUndo!.outputArea.model.changed);
-        const output = cellAfterUndo!.outputArea.model.get(0);
-        expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
-          finalOutput
+        await signalToPromise(cellAfterUndo.outputArea.model.changed);
+        const output = cellAfterUndo.outputArea.model.get(0);
+
+        // The cell should still be executing and output should not be final
+        expect(finalOutput.startsWith(output.data[STDOUT_TYPE] as string)).toBe(
+          true
         );
+        expect(output.data[STDOUT_TYPE]).not.toBe(finalOutput);
+        expect(cellAfterUndo.model.executionState).toBe('running');
+        expect(cellAfterUndo.model.executionCount).toBe(null);
+
+        // Wait for cell to complete execution
         await executionCompleted;
-        expect(output.data['application/vnd.jupyter.stdout']).toBe(finalOutput);
+        // Verify outputs kept arriving even after undo reconnected the future.
+        expect(output.data[STDOUT_TYPE]).toBe(finalOutput);
+        expect(cellAfterUndo.model.executionState).toBe('idle');
+        expect(cellAfterUndo.model.executionCount).not.toBe(null);
       }, 20000);
     });
 
