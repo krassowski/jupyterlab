@@ -20,7 +20,7 @@ import {
 } from '@jupyterlab/notebook';
 import type { Stdin } from '@jupyterlab/outputarea';
 import type { IRenderMimeRegistry } from '@jupyterlab/rendermime';
-import type { ISharedCodeCell } from '@jupyter/ydoc';
+import type { IExecutionState, ISharedCodeCell } from '@jupyter/ydoc';
 import type { YNotebook } from '@jupyter/ydoc';
 import {
   acceptDialog,
@@ -2087,11 +2087,21 @@ describe('@jupyterlab/notebook', () => {
         expect(widget.widgets[1].model.sharedModel.getSource()).toBe('bar');
       });
 
+      function waitForExecutionState(cell: CodeCell, state: IExecutionState) {
+        return new Promise<void>(resolve => {
+          cell.model.sharedModel.changed.connect((_, change) => {
+            if (change.executionStateChange?.newValue === state) {
+              resolve();
+            }
+          });
+        });
+      }
+
       it.each([
         { interrupt: true, secondCellExpectedState: 'idle' as const },
         { interrupt: false, secondCellExpectedState: 'running' as const }
       ])(
-        'should preserve execution state after undoing a merge (interrupt: $interrupt)',
+        'should preserve execution state and output after undoing a merge (interrupt: $interrupt)',
         async ({
           interrupt,
           secondCellExpectedState
@@ -2102,18 +2112,15 @@ describe('@jupyterlab/notebook', () => {
           const cell = widget.widgets[0] as CodeCell;
           widget.activeCellIndex = 0;
           const initialSource =
-            'import time\nfor i in range(10):\n    print(i)\n    time.sleep(1)';
+            'import time\nfor i in range(5):\n    print(i)\n    time.sleep(1)';
           cell.model.sharedModel.setSource(initialSource);
 
-          const running = new Promise<void>(resolve => {
-            cell.model.sharedModel.changed.connect((_, change) => {
-              if (change.executionStateChange?.newValue === 'running') {
-                resolve();
-              }
-            });
-          });
-          const runPromise = NotebookActions.run(widget, ipySessionContext);
-          await running;
+          const executionStarted = waitForExecutionState(cell, 'running');
+          const executionCompleted = NotebookActions.run(
+            widget,
+            ipySessionContext
+          );
+          await executionStarted;
 
           // Split the first cell
           const editor = cell.editor as CodeEditor.IEditor;
@@ -2126,7 +2133,7 @@ describe('@jupyterlab/notebook', () => {
             'import time'
           );
           expect(secondSplitCell.model.sharedModel.getSource()).toBe(
-            'for i in range(10):\n    print(i)\n    time.sleep(1)'
+            'for i in range(5):\n    print(i)\n    time.sleep(1)'
           );
           expect(firstSplitCell.model.sharedModel.executionState).toBe('idle');
           expect(secondSplitCell.model.sharedModel.executionState).toBe(
@@ -2150,7 +2157,7 @@ describe('@jupyterlab/notebook', () => {
             const statusChanged = signalToPromise(kernel!.statusChanged);
             await kernel!.interrupt();
             await statusChanged;
-            await runPromise.catch(() => false);
+            await executionCompleted.catch(() => false);
             expect(mergedCell.model.sharedModel.executionState).toBe('idle');
           }
 
@@ -2162,7 +2169,7 @@ describe('@jupyterlab/notebook', () => {
             .sharedModel;
           expect(firstCellModelAfterUndo.getSource()).toBe('import time');
           expect(secondCellModelAfterUndo.getSource()).toBe(
-            'for i in range(10):\n    print(i)\n    time.sleep(1)'
+            'for i in range(5):\n    print(i)\n    time.sleep(1)'
           );
           expect(firstCellModelAfterUndo.executionState).toBe('idle');
           expect(secondCellModelAfterUndo.executionState).toBe(
@@ -2173,15 +2180,91 @@ describe('@jupyterlab/notebook', () => {
             const secondCellAfterUndo = widget.widgets[1] as CodeCell;
             // Verify output keeps arriving in the reconnected cell.
             await signalToPromise(secondCellAfterUndo.outputArea.model.changed);
-            expect(secondCellAfterUndo.outputArea.model.length).toBeGreaterThan(
-              0
+            const output = secondCellAfterUndo.outputArea.model.get(0);
+
+            const finalOutput = '0\n1\n2\n3\n4\n';
+            expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
+              finalOutput
             );
-            await kernel!.interrupt();
-            await runPromise.catch(() => false);
+            await executionCompleted;
+            expect(output.data['application/vnd.jupyter.stdout']).toBe(
+              finalOutput
+            );
           }
         },
-        30000
+        20000
       );
+
+      it('should preserve execution state and output after undoing a cell type change', async () => {
+        const cell = widget.widgets[0] as CodeCell;
+        const finalOutput = '0\n1\n2\n3\n4\n';
+        widget.activeCellIndex = 0;
+        const initialSource =
+          'import time\nfor i in range(5):\n    print(i)\n    time.sleep(1)';
+        cell.model.sharedModel.setSource(initialSource);
+
+        const executionStarted = waitForExecutionState(cell, 'running');
+        const executionCompleted = NotebookActions.run(
+          widget,
+          ipySessionContext
+        );
+        await executionStarted;
+
+        await signalToPromise(cell.outputArea.model.changed);
+        const outputBefore = cell.outputArea.model.get(0);
+        expect(outputBefore.data['application/vnd.jupyter.stdout']).not.toBe(
+          finalOutput
+        );
+
+        NotebookActions.changeCellType(widget, 'markdown');
+
+        await sleep(1500);
+
+        NotebookActions.undo(widget);
+        const cellAfterUndo = widget.widgets[0] as CodeCell;
+
+        const output = cellAfterUndo.outputArea.model.get(0);
+        expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
+          finalOutput
+        );
+        const inCompletedState = waitForExecutionState(cell, 'idle');
+        await Promise.all([inCompletedState, executionCompleted]);
+        expect(output.data['application/vnd.jupyter.stdout']).toBe(finalOutput);
+      }, 20000);
+
+      it('should preserve execution state and output after undoing a cell deletion', async () => {
+        const finalOutput = '0\n1\n2\n3\n4\n';
+        const cell = widget.widgets[0] as CodeCell;
+        widget.activeCellIndex = 0;
+        const cellId = cell.model.id;
+        const initialSource =
+          'import time\nfor i in range(5):\n    print(i)\n    time.sleep(1)';
+        cell.model.sharedModel.setSource(initialSource);
+
+        const executionStarted = waitForExecutionState(cell, 'running');
+        const executionCompleted = NotebookActions.run(
+          widget,
+          ipySessionContext
+        );
+        await executionStarted;
+
+        NotebookActions.deleteCells(widget);
+
+        NotebookActions.undo(widget);
+        const cellAfterUndo = widget.widgets.find(
+          w => w.model.id === cellId
+        ) as CodeCell | undefined;
+        expect(cellAfterUndo).toBeInstanceOf(CodeCell);
+
+        // Verify output keeps arriving after undo reconnects the future.
+        await signalToPromise(cellAfterUndo!.outputArea.model.changed);
+        const output = cellAfterUndo!.outputArea.model.get(0);
+        expect(output.data['application/vnd.jupyter.stdout']).not.toBe(
+          finalOutput
+        );
+        await executionCompleted;
+        expect(output.data['application/vnd.jupyter.stdout']).toBe(finalOutput);
+      }, 20000);
     });
 
     describe('#redo()', () => {
