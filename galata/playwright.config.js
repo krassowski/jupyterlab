@@ -5,7 +5,11 @@ var baseConfig = require('@jupyterlab/galata/lib/playwright-config');
 
 var chromiumArgs = [
   // Ensures that subpixel font rendering in Chrome is the same on CI as locally
-  '--disable-lcd-text'
+  '--disable-lcd-text',
+  // Disable smooth scrolling to prevent focus-correction scrolls that fire after
+  // a smooth scroll animation completes and scroll the notebook back to the
+  // focused editor element, breaking tests that verify keyboard-driven scrolling.
+  '--disable-smooth-scrolling'
 ];
 
 module.exports = {
