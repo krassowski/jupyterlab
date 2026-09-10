@@ -36,6 +36,7 @@ export abstract class KernelFutureHandler<
   ) {
     super(cb);
     this._msg = msg;
+    this._expectReply = expectReply;
     if (!expectReply) {
       this._setFlag(Private.KernelFutureFlag.GotReply);
     }
@@ -241,6 +242,12 @@ export abstract class KernelFutureHandler<
     this._setFlag(Private.KernelFutureFlag.GotReply);
     if (this._testFlag(Private.KernelFutureFlag.GotIdle)) {
       this._handleDone();
+      return;
+    }
+    if (!this._expectReply && Private.isErrorReply(msg)) {
+      // A message type which has no reply of its own got one, and it says the
+      // kernel refused the message, so no status and no output can follow.
+      this._handleDone();
     }
   }
 
@@ -299,6 +306,7 @@ export abstract class KernelFutureHandler<
   }
 
   private _msg: REQUEST;
+  private _expectReply: boolean;
   private _status = 0;
   private _stdin: (
     msg: KernelMessage.IStdinMessage
@@ -329,6 +337,16 @@ export class KernelShellFutureHandler<
   implements Kernel.IShellFuture<REQUEST, REPLY> {}
 
 namespace Private {
+  /**
+   * Test whether a reply reports an error status.
+   */
+  export function isErrorReply(
+    msg: KernelMessage.IShellControlMessage
+  ): boolean {
+    const content = msg.content as Partial<KernelMessage.IReplyErrorContent>;
+    return content.status === 'error';
+  }
+
   /**
    * A no-op function.
    */

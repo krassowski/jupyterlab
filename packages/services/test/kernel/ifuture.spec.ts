@@ -357,4 +357,35 @@ describe('Kernel.IShellFuture', () => {
       future.removeMessageHook(first);
     });
   });
+
+  describe('Unexpected reply', () => {
+    it('should be done when a message with no reply is refused', async () => {
+      // A comm message has no reply of its own and normally ends on the idle
+      // status. A kernel that refuses it may answer with an error reply and no
+      // status, which has to end the request just the same.
+      tester = new KernelTester();
+
+      tester.onMessage(message => {
+        // The reply type a kernel picks is derived from the request type, so
+        // ipykernel answers a comm message with `comm_reply`. That type is not
+        // in the typed union, and the future keys off the channel and the
+        // parent rather than the type, so any reply type does here.
+        tester.parentHeader = message.header;
+        tester.sendMessage({
+          msgType: 'execute_reply',
+          channel: 'shell',
+          content: {
+            status: 'error',
+            ename: 'KeyError',
+            evalue: "Unknown subshell_id 'gone'",
+            traceback: []
+          }
+        });
+      });
+
+      const kernel = await tester.start();
+      const comm = kernel.createComm('refusedTarget');
+      await expect(comm.send({ foo: 'bar' }).done).resolves.not.toThrow();
+    });
+  });
 });
