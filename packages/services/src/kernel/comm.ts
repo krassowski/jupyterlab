@@ -182,7 +182,7 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
       metadata,
       buffers
     });
-    return this._kernel.sendShellMessage(msg, false, true);
+    return this._sendShellMessage(msg, true);
   }
 
   /**
@@ -215,7 +215,7 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
       metadata,
       buffers
     });
-    return this._kernel.sendShellMessage(msg, false, disposeOnDone);
+    return this._sendShellMessage(msg, disposeOnDone);
   }
 
   /**
@@ -250,7 +250,7 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
       metadata,
       buffers
     });
-    const future = this._kernel.sendShellMessage(msg, false, true);
+    const future = this._sendShellMessage(msg, true);
     const onClose = this._onClose;
     if (onClose) {
       const ioMsg = KernelMessage.createMessage({
@@ -278,6 +278,37 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
     void this._maybeCloseSubshell(this._commsOverSubshells);
 
     super.dispose();
+  }
+
+  /**
+   * Send a comm message on the shell channel, keeping track of it while it is
+   * addressed to the subshell owned by this comm.
+   *
+   * #### Notes
+   * A kernel may drop shell messages addressed to a subshell it was already
+   * deleted (https://github.com/ipython/ipykernel/issues/1557).
+   *
+   * We keep the subshell alive until the kernel has processed every message,
+   * which is what this method does by recording to `_pendingOnSubshell`.
+   */
+  private _sendShellMessage(
+    msg: KernelMessage.IShellMessage,
+    disposeOnDone: boolean
+  ): Kernel.IShellFuture {
+    const future = this._kernel.sendShellMessage(msg, false, disposeOnDone);
+    const subshellId = msg.header.subshell_id;
+    if (subshellId && subshellId === this._subshellId) {
+      // A canceled future rejects, and no further reply is expected for it.
+      const settled = future.done.then(
+        () => undefined,
+        () => undefined
+      );
+      this._pendingOnSubshell.add(settled);
+      void settled.then(() => {
+        this._pendingOnSubshell.delete(settled);
+      });
+    }
+    return future;
   }
 
   private _cleanSubshells() {
@@ -382,6 +413,11 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
   }
 
   private async _maybeCloseSubshell(mode: CommsOverSubshells) {
+    if (this._pendingOnSubshell.size > 0) {
+      // Deleting the subshell now would make the kernel drop these messages.
+      // A dead kernel cancels the futures, so this cannot wait forever.
+      await Promise.all([...this._pendingOnSubshell]);
+    }
     if (this._kernel.status === 'dead') {
       return;
     }
@@ -412,6 +448,7 @@ export class CommHandler extends DisposableDelegate implements Kernel.IComm {
   }
 
   private _subshellStarted = new PromiseDelegate<void>();
+  private _pendingOnSubshell = new Set<Promise<void>>();
   private static _commTargetSubShellsId: {
     // One subshell per kernel per comm target.
     [kernelId: string]: {

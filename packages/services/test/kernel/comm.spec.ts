@@ -1,7 +1,12 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { expectFailure, isFulfilled, JupyterServer } from '@jupyterlab/testing';
+import {
+  expectFailure,
+  isFulfilled,
+  JupyterServer,
+  sleep
+} from '@jupyterlab/testing';
 import { PromiseDelegate } from '@lumino/coreutils';
 import type { Kernel } from '../../src';
 import { CommsOverSubshells, KernelManager, KernelMessage } from '../../src';
@@ -575,6 +580,33 @@ describe('jupyter.services - Comm', () => {
         // Disposal should not throw
         comm1.dispose();
       });
+
+      it('should let the kernel handle pending messages before deleting the subshell', async () => {
+        await echoKernel.info;
+
+        echoKernel.commsOverSubshells = CommsOverSubshells.PerCommTarget;
+
+        const unanswered: number[] = [];
+        // Deleting a subshell races the messages already sent on it, so one
+        // round only fails part of the time. Repeating makes it reliable.
+        for (let i = 0; i < 10; i++) {
+          const comm = echoKernel.createComm('pendingTarget') as CommHandler;
+          await comm.subshellStarted;
+          await comm.open().done;
+
+          const sent = comm.send({ foo: 'bar' }).done;
+          comm.dispose();
+
+          const outcome = await Promise.race([
+            sent.then(() => 'answered'),
+            sleep(5000, 'timeout')
+          ]);
+          if (outcome === 'timeout') {
+            unanswered.push(i);
+          }
+        }
+        expect(unanswered).toEqual([]);
+      }, 120000);
     });
   });
 
@@ -711,6 +743,32 @@ describe('jupyter.services - Comm', () => {
           comm.send('test');
         }).toThrow();
       });
+
+      it('should complete when the comm runs on a subshell', async () => {
+        await echoKernel.info;
+
+        echoKernel.commsOverSubshells = CommsOverSubshells.PerCommTarget;
+
+        const unclosed: number[] = [];
+        // Deleting a subshell races the messages already sent on it, so one
+        // round only fails part of the time. Repeating makes it reliable.
+        for (let i = 0; i < 10; i++) {
+          const subshellComm = echoKernel.createComm(
+            'closeTarget'
+          ) as CommHandler;
+          await subshellComm.subshellStarted;
+          await subshellComm.open().done;
+
+          const outcome = await Promise.race([
+            subshellComm.close().done.then(() => 'closed'),
+            sleep(5000, 'timeout')
+          ]);
+          if (outcome === 'timeout') {
+            unclosed.push(i);
+          }
+        }
+        expect(unclosed).toEqual([]);
+      }, 120000);
     });
   });
 });
