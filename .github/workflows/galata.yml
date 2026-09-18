@@ -28,6 +28,8 @@ env:
 
 jobs:
   test:
+    # TEMPORARY: disabled while the cross-platform experiment runs.
+    if: false
     name: Integration Tests (${{ matrix.browser }} - ${{ matrix.suite }} ${{ matrix.shard }}/${{ matrix.shards }})
     timeout-minutes: 30
     runs-on: ubuntu-24.04
@@ -334,6 +336,8 @@ jobs:
           cat /tmp/jupyterlab_server.log
 
   examples:
+    # TEMPORARY: disabled while the cross-platform experiment runs.
+    if: false
     name: Example Tests
     timeout-minutes: 45
     runs-on: ubuntu-24.04
@@ -426,8 +430,10 @@ jobs:
           compression-level: 1
 
   merge-reports:
+    # TEMPORARY: disabled while the cross-platform experiment runs.
+    # Restore to: if: ${{ !cancelled() }}
+    if: false
     name: Merge Test Reports and Results
-    if: ${{ !cancelled() }}
     needs: [test, examples]
     runs-on: ubuntu-22.04
     permissions:
@@ -581,3 +587,124 @@ jobs:
           delete-merged: true
           retention-days: 1
           compression-level: 1
+
+  cross-platform:
+    name: Cross-platform Snapshots (${{ matrix.label }})
+    timeout-minutes: 120
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is the control: it reads the same references it recorded.
+          - os: ubuntu-24.04
+            label: Linux
+          - os: macos-latest
+            label: macOS
+          - os: windows-latest
+            label: Windows
+    env:
+      # Compare against the Linux references whatever the runner is.
+      GALATA_REFERENCE_PLATFORM: linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Base Setup
+        uses: jupyterlab/maintainer-tools/.github/actions/base-setup@95d85449e4f3f352e261221f6529f8ed307f5728 # v1
+        with:
+          python_package_manager: 'uv pip'
+
+      - name: Find out Playwright version
+        id: pw-version
+        shell: bash
+        run: |
+          set -e
+          PW_VERSION=$(grep -m1 '^"playwright@npm:' yarn.lock)
+          echo "Playwright version: $PW_VERSION"
+          echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up browser cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ${{ github.workspace }}/pw-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-chromium-${{ steps.pw-version.outputs.version }}
+
+      - name: Install dependencies
+        if: ${{ runner.os != 'Windows' }}
+        run: bash ./scripts/ci_install.sh
+
+      - name: Install dependencies (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: .\scripts\ci_install
+        shell: pwsh
+
+      - name: Install browser
+        shell: bash
+        run: |
+          set -ex
+          cd galata
+          jlpm playwright install chromium --only-shell
+
+      - name: Build galata
+        shell: bash
+        run: |
+          set -ex
+          cd galata
+          jlpm build
+
+      - name: Test
+        # TEMPORARY: while measuring, a mismatch is the expected outcome.
+        # Drop this once the portable subset is known and pinned with --grep.
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -ex
+          cd galata
+          jlpm test -c playwright-cross-platform.config.js --project jupyterlab --shard 1/6
+
+      - name: Inline the report
+        if: ${{ !cancelled() }}
+        uses: jupyterlab/maintainer-tools/.github/actions/inline-playwright-report@95d85449e4f3f352e261221f6529f8ed307f5728 # v1
+        with:
+          path: galata/playwright-report
+
+      - name: Upload inlined report
+        id: upload-report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          archive: false
+          name: cross-platform-report-${{ matrix.os }}
+          path: galata/playwright-report/output.html
+
+      - name: Add report link to job summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload-report.outputs.artifact-url }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          echo "**[View the report for ${LABEL}](${ARTIFACT_URL})**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Summarise the comparison
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          python scripts/compare_reference_platforms.py \
+            galata/test-results/report.json \
+            --label "${LABEL}"
+
+      - name: Upload test assets
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: cross-platform-assets-${{ matrix.os }}
+          path: galata/test-results
+          if-no-files-found: ignore
