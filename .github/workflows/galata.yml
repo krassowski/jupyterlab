@@ -608,6 +608,9 @@ jobs:
     env:
       # Compare against the Linux references whatever the runner is.
       GALATA_REFERENCE_PLATFORM: linux
+      # Lumino renders `⌘C` instead of `Ctrl+C` when navigator.platform says
+      # Mac, which makes menu screenshots differ in text rather than in pixels.
+      GALATA_SPOOF_PLATFORM: Linux x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -650,6 +653,12 @@ jobs:
           cd galata
           jlpm playwright install chromium --only-shell
 
+      - name: Measure font rendering
+        shell: bash
+        env:
+          PROBE_LABEL: default
+        run: node galata/font-probe.js
+
       - name: Build galata
         shell: bash
         run: |
@@ -666,6 +675,37 @@ jobs:
           set -ex
           cd galata
           jlpm test -c playwright-cross-platform.config.js --project jupyterlab --shard 1/6
+
+      # Everything below runs after the suite, so it cannot affect its result.
+      - name: Turn off macOS font smoothing
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
+        run: |
+          defaults -currentHost write -g AppleFontSmoothing -int 0
+          defaults write -g AppleFontSmoothing -int 0
+
+      - name: Turn off Windows font smoothing
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $desktop = 'HKCU:\Control Panel\Desktop'
+          Set-ItemProperty -Path $desktop -Name FontSmoothing -Value '0'
+          Set-ItemProperty -Path $desktop -Name FontSmoothingType -Value 1 -Type DWord
+          Set-ItemProperty -Path $desktop -Name FontSmoothingGamma -Value 1000 -Type DWord
+          Get-ItemProperty -Path $desktop -Name FontSmoothing, FontSmoothingType, FontSmoothingGamma
+
+      - name: Measure font rendering without smoothing
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          PROBE_LABEL: smoothing-off
+        run: node galata/font-probe.js
+
+      - name: Upload font probe
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: font-probe-${{ matrix.os }}
+          path: galata/font-probe-results
 
       - name: Inline the report
         if: ${{ !cancelled() }}
