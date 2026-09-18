@@ -3,6 +3,12 @@
 
 var baseConfig = require('@jupyterlab/galata/lib/playwright-config');
 
+// Reference screenshots are recorded on Linux and carry a `-linux` suffix.
+// Setting GALATA_REFERENCE_PLATFORM makes a run on any machine compare against
+// that platform's references instead of its own, which is how the Linux
+// references are checked on macOS and Windows.
+var referencePlatform = process.env.GALATA_REFERENCE_PLATFORM;
+
 var chromiumArgs = [
   // Ensures that subpixel font rendering in Chrome is the same on CI as locally
   '--disable-lcd-text',
@@ -14,6 +20,10 @@ var chromiumArgs = [
 
 module.exports = {
   ...baseConfig,
+  snapshotPathTemplate:
+    '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}-' +
+    (referencePlatform || '{platform}') +
+    '{ext}',
   reporter: process.env.CI
     ? [['blob'], ['json', { outputFile: 'test-results/report.json' }]]
     : [['list'], ['html', { open: 'on-failure' }]],
