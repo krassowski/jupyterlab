@@ -38,22 +38,26 @@ MISSING_RE = re.compile(
 SNAPSHOT_RE = re.compile(r"^\s*Snapshot: (\S+)\s*$", re.MULTILINE)
 
 MATCHED = "matched"
+NO_SCREENSHOT = "no screenshot"
 PIXELS = "pixel mismatch"
 SIZE = "size mismatch"
 MISSING = "reference missing"
 OTHER = "failed elsewhere"
 SKIPPED = "skipped"
 
-ORDER = [MATCHED, PIXELS, SIZE, MISSING, OTHER, SKIPPED]
+ORDER = [MATCHED, NO_SCREENSHOT, PIXELS, SIZE, MISSING, OTHER, SKIPPED]
 # U+203A, the separator Playwright uses between a describe block and a test.
 TITLE_SEPARATOR = " \u203a "
 COMPARED = (MATCHED, PIXELS, SIZE)
+EMPTY_COUNTS = {"comparisons": 0, "failed": 0}
 
 
 @dataclass
 class Row:
     title: str
     verdict: str
+    comparisons: int = 0
+    matched_comparisons: int = 0
     reference: str = ""
     diff_pixels: int | None = None
     total_pixels: int | None = None
@@ -109,19 +113,21 @@ def message_of(result: dict) -> str:
     return ANSI_RE.sub("", "\n".join(parts))
 
 
-def classify(title: str, test: dict, search_dirs: list[Path]) -> Row:
-    status = test.get("status")
-    if status == "skipped":
-        return Row(title, SKIPPED)
-    if status in ("expected", "flaky"):
-        return Row(title, MATCHED)
-
-    result = (test.get("results") or [{}])[-1]
+def classify_failure(
+    title: str, result: dict, search_dirs: list[Path], ran: int, matched: int
+) -> Row:
+    """Say why one failing test failed, and by how much when it is pixels."""
     message = message_of(result)
 
     missing = MISSING_RE.search(message)
     if missing:
-        return Row(title, MISSING, reference=Path(missing.group(1)).name)
+        return Row(
+            title,
+            MISSING,
+            reference=Path(missing.group(1)).name,
+            comparisons=ran,
+            matched_comparisons=matched,
+        )
 
     reference = expected_attachment(result, search_dirs)
     snapshot = SNAPSHOT_RE.search(message)
@@ -130,31 +136,80 @@ def classify(title: str, test: dict, search_dirs: list[Path]) -> Row:
     size = SIZE_RE.search(message)
     if size:
         detail = f"reference {size.group(1)}x{size.group(2)}, got {size.group(3)}x{size.group(4)}"
-        return Row(title, SIZE, reference=name, detail=detail)
+        return Row(
+            title,
+            SIZE,
+            reference=name,
+            detail=detail,
+            comparisons=ran,
+            matched_comparisons=matched,
+        )
 
     pixels = PIXELS_RE.search(message)
     if pixels:
-        row = Row(title, PIXELS, reference=name, diff_pixels=int(pixels.group(1)))
+        row = Row(
+            title,
+            PIXELS,
+            reference=name,
+            diff_pixels=int(pixels.group(1)),
+            comparisons=ran,
+            matched_comparisons=matched,
+        )
         dimensions = png_size(reference) if reference else None
         if dimensions:
             row.total_pixels = dimensions[0] * dimensions[1]
         return row
 
     first_line = next((line for line in message.splitlines() if line.strip()), "")
-    return Row(title, OTHER, detail=first_line.strip()[:110] or "no error message")
+    return Row(
+        title,
+        OTHER,
+        detail=first_line.strip()[:110] or "no error message",
+        comparisons=ran,
+        matched_comparisons=matched,
+    )
 
 
-def render(rows: list[Row], label: str) -> str:
+def classify(title: str, test: dict, search_dirs: list[Path], counts: dict | None) -> Row:
+    """Decide what one test says about the references it compared against."""
+    status = test.get("status")
+    ran = counts["comparisons"] if counts else 0
+    matched = ran - counts["failed"] if counts else 0
+
+    if status == "skipped":
+        return Row(title, SKIPPED)
+    if status in ("expected", "flaky"):
+        # Without the counts every passing test looks like a match, so only
+        # make the distinction when they are there.
+        if counts is not None and ran == 0:
+            return Row(title, NO_SCREENSHOT)
+        return Row(title, MATCHED, comparisons=ran, matched_comparisons=matched)
+
+    result = (test.get("results") or [{}])[-1]
+    return classify_failure(title, result, search_dirs, ran, matched)
+
+
+def render(rows: list[Row], label: str, counted: bool) -> str:
     counts = Counter(row.verdict for row in rows)
     compared = sum(counts[key] for key in COMPARED)
     lines = [f"## Linux reference screenshots on {label}", ""]
     lines += ["| Outcome | Tests |", "| --- | ---: |"]
     lines += [f"| {key} | {counts[key]} |" for key in ORDER if counts[key]]
     lines += [f"| **total** | **{len(rows)}** |", ""]
-    if compared:
+    if counted:
+        ran = sum(row.comparisons for row in rows)
+        ok = sum(row.matched_comparisons for row in rows)
+        lines += [
+            f"{ok} of the {ran} screenshot assertions that ran matched the Linux "
+            f"references. A test stops at its first mismatch, so the screenshots "
+            f"after that one in the same test never ran.",
+            "",
+        ]
+    elif compared:
         lines += [
             f"{counts[MATCHED]} of the {compared} tests that reached a pixel "
-            f"comparison matched the Linux references.",
+            f"comparison matched the Linux references. Without snapshot-steps.json "
+            f"a test that takes no screenshot at all is counted as a match here.",
             "",
         ]
 
@@ -193,6 +248,13 @@ def main() -> int:
     )
     parser.add_argument("--label", default=sys.platform, help="Platform the run happened on")
     parser.add_argument(
+        "--steps",
+        type=Path,
+        default=None,
+        help="Screenshot counts from snapshot-steps-reporter.js "
+        "(defaults to snapshot-steps.json next to the report)",
+    )
+    parser.add_argument(
         "--search",
         type=Path,
         action="append",
@@ -207,13 +269,23 @@ def main() -> int:
 
     report = json.loads(args.report.read_text())
     search_dirs = [path for path in (args.search or [args.report.parent]) if path.is_dir()]
+
+    steps_path = args.steps or args.report.parent / "snapshot-steps.json"
+    steps = json.loads(steps_path.read_text()) if steps_path.is_file() else None
+    if steps is None:
+        sys.stderr.write(f"No screenshot counts at {steps_path}\n")
+
     rows = []
     for suite in report.get("suites", []):
         for titles, spec in iter_specs(suite, (suite.get("title", ""),)):
             title = TITLE_SEPARATOR.join([*titles[1:], spec.get("title", "")])
-            rows.extend(classify(title, test, search_dirs) for test in spec.get("tests", []))
+            # A test missing from the counts ran no comparison at all.
+            counts = None if steps is None else steps.get(spec.get("id"), EMPTY_COUNTS)
+            rows.extend(
+                classify(title, test, search_dirs, counts) for test in spec.get("tests", [])
+            )
 
-    text = render(rows, args.label)
+    text = render(rows, args.label, steps is not None)
     sys.stdout.write(text + "\n")
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")

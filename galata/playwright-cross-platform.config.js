@@ -32,6 +32,10 @@ module.exports = {
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
-    ['json', { outputFile: 'test-results/report.json' }]
+    ['json', { outputFile: 'test-results/report.json' }],
+    [
+      require.resolve('./snapshot-steps-reporter.js'),
+      { outputFile: 'test-results/snapshot-steps.json' }
+    ]
   ]
 };
