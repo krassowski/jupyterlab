@@ -95,15 +95,16 @@ def expected_attachment(result: dict, search_dirs: list[Path]) -> Path | None:
         if name != "expected" and not name.endswith("-expected.png"):
             continue
         raw = attachment.get("path")
-        if not raw:
-            continue
-        path = Path(raw)
-        if path.is_file():
-            return path
-        # The report may come from another machine: look the file up by name.
+        if raw and Path(raw).is_file():
+            return Path(raw)
+        # The report may come from another machine. Look the file up by name,
+        # trying the attachment name too: `toHaveScreenshot` points `path` at
+        # the reference in the checkout, which is not in the uploaded results.
+        candidates = [name] + ([Path(raw).name] if raw else [])
         for directory in search_dirs:
-            for candidate in directory.rglob(path.name):
-                return candidate
+            for candidate in candidates:
+                for found in directory.rglob(candidate):
+                    return found
     return None
 
 
