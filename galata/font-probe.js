@@ -25,17 +25,7 @@ const SUITE_ARGS = [
 
 const VARIANTS = [
   { name: 'default', args: [], textRendering: 'auto' },
-  { name: 'geometric', args: [], textRendering: 'geometricPrecision' },
-  {
-    name: 'contrast0-gamma0',
-    args: ['--text-contrast=0', '--text-gamma=0'],
-    textRendering: 'auto'
-  },
-  {
-    name: 'contrast1-gamma2.2',
-    args: ['--text-contrast=1', '--text-gamma=2.2'],
-    textRendering: 'auto'
-  }
+  { name: 'geometric', args: [], textRendering: 'geometricPrecision' }
 ];
 
 const SAMPLES = [
