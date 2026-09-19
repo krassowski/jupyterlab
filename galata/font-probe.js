@@ -12,16 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const SUITE_ARGS = [
-  '--disable-lcd-text',
-  '--disable-webgl',
-  '--force-color-profile=srgb',
-  '--disable-skia-runtime-opts',
-  '--font-render-hinting=full',
-  '--force-device-scale-factor=1',
-  '--disable-gpu',
-  '--disable-accelerated-2d-canvas'
-];
+// Taken from the suite's own configuration so the two cannot drift apart.
+const SUITE_ARGS = require('./playwright.config').projects.find(
+  project => project.name === 'jupyterlab'
+).use.launchOptions.args;
 
 const VARIANTS = [
   { name: 'default', args: [], textRendering: 'auto' },
@@ -98,7 +92,7 @@ function buildPage() {
 
   const rows = SAMPLES.map(
     s =>
-      `<div class="row"><span id="${s.id}" style="font-family:'${s.font}';font-weight:${s.weight};font-style:${s.style}">${s.text}</span></div>`
+      `<div class="row" style="font-family:'${s.font}'"><span id="${s.id}" style="font-weight:${s.weight};font-style:${s.style}">${s.text}</span></div>`
   ).join('\n');
 
   return `<!doctype html><meta charset="utf-8"><style>
@@ -108,7 +102,13 @@ html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 body { margin: 0; background: #fff; font-size: 13px; }
 .row { padding: 3px 8px; }
 span { white-space: pre; }
-</style>${rows}`;
+/* Struts: the height that line-height normal resolves to at a given size.
+   Blink derives it from the ascent and descent each platform reads from the
+   font, so a difference here moves every baseline that relies on normal. */
+.strut { font-family: 'Bundled'; line-height: normal; }
+</style>${rows}
+<div class="strut" id="strut-13" style="font-size:13px">x</div>
+<div class="strut" id="strut-14" style="font-size:14px">x</div>`;
 }
 
 async function runVariant(variant, outDir) {
@@ -133,6 +133,12 @@ async function runVariant(variant, outDir) {
       ),
     SAMPLES.map(s => s.id)
   );
+  for (const id of ['strut-13', 'strut-14']) {
+    widths[id] = await page.evaluate(
+      key => document.getElementById(key).getBoundingClientRect().height,
+      id
+    );
+  }
   await browser.close();
   return widths;
 }
@@ -153,13 +159,12 @@ async function runVariant(variant, outDir) {
 
   const header = `| Sample | ${VARIANTS.map(v => v.name).join(' | ')} |`;
   const lines = [
-    `### Advance widths on ${process.platform}, setting: ${label}`,
+    `### Text metrics on ${process.platform}, setting: ${label}`,
     '',
     header,
     `| --- | ${VARIANTS.map(() => '---:').join(' | ')} |`,
-    ...SAMPLES.map(
-      s =>
-        `| ${s.id} | ${VARIANTS.map(v => results[v.name][s.id]).join(' | ')} |`
+    ...[...SAMPLES.map(s => s.id), 'strut-13', 'strut-14'].map(
+      id => `| ${id} | ${VARIANTS.map(v => results[v.name][id]).join(' | ')} |`
     ),
     ''
   ];
