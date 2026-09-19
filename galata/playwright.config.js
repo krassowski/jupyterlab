@@ -16,17 +16,22 @@ var chromiumArgs = [
   // otherwise, each rasterizing text slightly differently. WebGL availability
   // varies between CI runners, so disable it to keep screenshots deterministic.
   '--disable-webgl',
-  // The six below leave the Linux output byte for byte identical, and each
-  // pins something a non-Linux machine may otherwise pick for itself: the
-  // display colour profile, the CPU-specific Skia code path, the hinting
-  // level, the device pixel ratio, and the two accelerated raster paths that
-  // macOS and Windows can back with Metal or Direct3D.
+  // Each of these pins something a non-Linux machine may otherwise pick for
+  // itself: the display colour profile, the CPU-specific Skia code path, the
+  // device pixel ratio, and the two accelerated raster paths that macOS and
+  // Windows can back with Metal or Direct3D.
   '--force-color-profile=srgb',
   '--disable-skia-runtime-opts',
-  '--font-render-hinting=full',
   '--force-device-scale-factor=1',
   '--disable-gpu',
-  '--disable-accelerated-2d-canvas'
+  '--disable-accelerated-2d-canvas',
+  // Linux is the only platform that hints, which makes it measure text wider
+  // than macOS and Windows do. These two produce output byte for byte
+  // identical to `text-rendering: geometricPrecision`, and they live here
+  // rather than in the shared config or the galata extension because they
+  // require the reference screenshots to be regenerated.
+  '--font-render-hinting=none',
+  '--disable-font-subpixel-positioning'
 ];
 
 module.exports = {
