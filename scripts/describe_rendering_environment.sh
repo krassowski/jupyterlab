@@ -18,19 +18,20 @@ section() {
 section "Distribution"
 cat /etc/os-release
 
+# The Ubuntu runner has rpm installed too, so ask dpkg first.
 section "Font packages"
-if command -v rpm > /dev/null; then
-    rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\n' | grep -i font | sort
-else
+if [[ -f /etc/debian_version ]]; then
     dpkg-query -W -f '${Package} ${Version}\n' | grep -i font | sort
+else
+    rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\n' | grep -i font | sort
 fi
 
 section "Text rendering libraries"
-if command -v rpm > /dev/null; then
-    rpm -q fontconfig freetype harfbuzz pango cairo 2>&1
-    rpm -q --whatprovides 'font(:lang=en)' 2>&1
+if [[ -f /etc/debian_version ]]; then
+    dpkg-query -W libfontconfig1 fontconfig-config libfreetype6 libharfbuzz0b libpango-1.0-0 libcairo2 2>&1
 else
-    dpkg-query -W libfontconfig1 libfreetype6 libharfbuzz0b libpango-1.0-0 libcairo2 2>&1
+    rpm -q fontconfig libfontconfig1 freetype libfreetype6 harfbuzz pango cairo 2>&1 | grep -v 'is not installed'
+    rpm -q --whatprovides 'font(:lang=en)' 2>&1
 fi
 fc-list --version 2>&1
 

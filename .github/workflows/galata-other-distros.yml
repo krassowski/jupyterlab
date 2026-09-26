@@ -34,12 +34,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [fedora]
+        distro: [fedora, opensuse]
         shard: [1, 2, 3, 4, 5, 6]
         include:
           - distro: fedora
             image: fedora:44
             label: Fedora 44
+          - distro: opensuse
+            image: opensuse/tumbleweed:latest
+            label: openSUSE Tumbleweed
     steps:
       - name: Install system packages (Fedora)
         if: ${{ matrix.distro == 'fedora' }}
@@ -61,6 +64,32 @@ jobs:
           ln -sf /usr/bin/python3.12 /usr/local/bin/python3
           ln -sf /usr/bin/python3.12 /usr/local/bin/python
 
+      - name: Install system packages (openSUSE)
+        if: ${{ matrix.distro == 'opensuse' }}
+        run: |
+          set -ex
+          cat /etc/os-release
+          grep -E '^\s*solver\.onlyRequires' /etc/zypp/zypp.conf || true
+          zypper --non-interactive refresh
+          zypper --non-interactive install \
+            git-core curl which findutils procps tar gzip xz unzip diffutils \
+            gcc gcc-c++ make \
+            python312 python312-pip \
+            nodejs24 npm24 \
+            mozilla-nss mozilla-nspr libatk-1_0-0 libatk-bridge-2_0-0 libcups2 \
+            libdrm2 libxkbcommon0 libXcomposite1 libXdamage1 libXfixes3 \
+            libXrandr2 libgbm1 libpango-1_0-0 libcairo2 libasound2
+          # Make Python 3.12 the default interpreter with pip, as setup-python
+          # does on the runner, since the UI tests on main use Python 3.12.
+          mkdir -p /usr/local/bin
+          ln -sf /usr/bin/python3.12 /usr/local/bin/python3
+          ln -sf /usr/bin/python3.12 /usr/local/bin/python
+          ln -sf "$(command -v pip3.12)" /usr/local/bin/pip
+          # openSUSE marks its Python as externally managed (PEP 668), and
+          # scripts/ci_install.sh installs into the system interpreter.
+          echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> "${GITHUB_ENV}"
+          echo "UV_BREAK_SYSTEM_PACKAGES=1" >> "${GITHUB_ENV}"
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -71,9 +100,12 @@ jobs:
           set -ex
           # The checkout belongs to the runner user and the steps run as root.
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          # Jupyter Server refuses to start as root without this.
+          # Jupyter Server refuses to start as root without this. With
+          # --config on the command line, as in `jlpm start`, the server reads
+          # jupyter_config.json from the config path but not
+          # jupyter_server_config.json.
           mkdir -p ~/.jupyter
-          echo '{"ServerApp": {"allow_root": true}}' > ~/.jupyter/jupyter_server_config.json
+          echo '{"ServerApp": {"allow_root": true}}' > ~/.jupyter/jupyter_config.json
           command -v python pip node npm
           python --version
           node --version
