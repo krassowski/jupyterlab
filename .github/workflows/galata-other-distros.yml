@@ -4,7 +4,11 @@ name: UI Tests on other Linux distributions
 # screenshots, which the Ubuntu 24.04 runner records, with the userland of
 # another Linux distribution. The same tests run on the plain Ubuntu 24.04
 # runner as a control, so that flaky tests can be told apart from rendering
-# differences. Reference images are never updated here.
+# differences. Reference images are only updated when a manual run asks for
+# it, and then only as an artifact.
+#
+# A manual run can test another commit: the code under test is checked out at
+# the root, and the measurement scripts of this branch in .other-distros-tools.
 
 on:
   push:
@@ -12,33 +16,63 @@ on:
       - other-distros-ui-tests
   workflow_dispatch:
     inputs:
-      platforms:
-        description: >-
-          JSON list of platforms to run, each with id, image, label and
-          optionally extra_packages, remove_packages and
-          unhint_small_dejavu. Empty runs the default list.
+      repository:
+        description: Repository of the code under test. Empty means this one.
         required: false
         default: ''
         type: string
-      control:
-        description: Run the plain Ubuntu 24.04 runner as a control
+      ref:
+        description: Commit, branch or tag of the code under test. Empty means this commit.
         required: false
-        default: true
-        type: boolean
+        default: ''
+        type: string
+      platforms:
+        description: >-
+          JSON list of container platforms, each with id, image, label and
+          optionally extra_packages, remove_packages and
+          unhint_small_dejavu. Empty runs the default list, [] runs none.
+        required: false
+        default: ''
+        type: string
+      runners:
+        description: >-
+          JSON list of GitHub-hosted runners, each with id, runs_on and
+          label. Empty runs the Ubuntu 24.04 control, [] runs none.
+        required: false
+        default: ''
+        type: string
       test_pattern:
         description: Playwright test name pattern to match (passed to --grep)
         required: false
         default: ''
         type: string
+      test_args:
+        description: More arguments for jlpm test, such as test files
+        required: false
+        default: ''
+        type: string
+      shards:
+        description: Number of shards, 1 or 6
+        required: false
+        default: '6'
+        type: string
+      update_snapshots:
+        description: >-
+          After the check, run the same tests again with
+          --update-snapshots=changed and upload the changed references
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
 env:
-  SHARDS: 6
+  SHARDS: ${{ inputs.shards == '1' && '1' || '6' }}
 
 jobs:
   distro:
-    name: ${{ matrix.platform.label }} (${{ matrix.shard }}/6)
+    name: ${{ matrix.platform.label }} (${{ matrix.shard }}/${{ inputs.shards == '1' && '1' || '6' }})
+    if: ${{ (inputs.platforms || '') != '[]' }}
     timeout-minutes: 90
     runs-on: ubuntu-24.04
     permissions:
@@ -53,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: ${{ fromJSON(inputs.shards == '1' && '[1]' || '[1, 2, 3, 4, 5, 6]') }}
         platform: ${{ fromJSON(inputs.platforms || '[{"id":"fedora","image":"fedora:44","label":"Fedora 44"},{"id":"opensuse","image":"opensuse/tumbleweed:latest","label":"openSUSE Tumbleweed"}]') }}
     steps:
       - name: Install system packages (Fedora)
@@ -152,16 +186,30 @@ jobs:
           fc-cache -f
           fc-conflist | grep unhint-small
 
-      - name: Checkout
+      - name: Checkout the code under test
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+
+      - name: Checkout the measurement scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          path: .other-distros-tools
+          persist-credentials: false
+          sparse-checkout: |
+            galata/snapshot-comparisons-reporter.js
+            scripts/describe_rendering_environment.sh
+            scripts/run_ui_tests_shard.sh
+          sparse-checkout-cone-mode: false
 
       - name: Configure the container
         run: |
           set -ex
-          # The checkout belongs to the runner user and the steps run as root.
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          # The checkouts belong to the runner user and the steps run as root.
+          git config --global --add safe.directory '*'
           # Jupyter Server refuses to start as root without this. With
           # --config on the command line, as in `jlpm start`, the server reads
           # jupyter_config.json from the config path but not
@@ -188,14 +236,15 @@ jobs:
           jlpm build
 
       - name: Record fonts, libraries and browser
-        run: bash ./scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
+        run: bash .other-distros-tools/scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
 
       - name: Test
         env:
           SHARD: ${{ matrix.shard }}
           TEST_PATTERN: ${{ inputs.test_pattern }}
+          EXTRA_TEST_ARGS: ${{ inputs.test_args }}
           COMPARISON_LABEL: ${{ matrix.platform.label }}
-        run: bash ./scripts/run_ui_tests_shard.sh
+        run: bash .other-distros-tools/scripts/run_ui_tests_shard.sh
 
       - name: Upload comparison records
         if: ${{ !cancelled() }}
@@ -223,22 +272,37 @@ jobs:
         if: ${{ always() }}
         run: cat /tmp/jupyterlab_server.log || true
 
-  control:
-    name: Ubuntu 24.04 runner (${{ matrix.shard }}/6)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.control }}
+  runner:
+    name: ${{ matrix.runner.label }} (${{ matrix.shard }}/${{ inputs.shards == '1' && '1' || '6' }})
+    if: ${{ (inputs.runners || '') != '[]' }}
     timeout-minutes: 90
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner.runs_on }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: ${{ fromJSON(inputs.shards == '1' && '[1]' || '[1, 2, 3, 4, 5, 6]') }}
+        runner: ${{ fromJSON(inputs.runners || '[{"id":"ubuntu","runs_on":"ubuntu-24.04","label":"Ubuntu 24.04 runner"}]') }}
     steps:
-      - name: Checkout
+      - name: Checkout the code under test
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+
+      - name: Checkout the measurement scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          path: .other-distros-tools
+          persist-credentials: false
+          sparse-checkout: |
+            galata/snapshot-comparisons-reporter.js
+            scripts/describe_rendering_environment.sh
+            scripts/run_ui_tests_shard.sh
+          sparse-checkout-cone-mode: false
 
       - name: Base Setup
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@95d85449e4f3f352e261221f6529f8ed307f5728 # v1
@@ -261,20 +325,21 @@ jobs:
           jlpm build
 
       - name: Record fonts, libraries and browser
-        run: bash ./scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
+        run: bash .other-distros-tools/scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
 
       - name: Test
         env:
           SHARD: ${{ matrix.shard }}
           TEST_PATTERN: ${{ inputs.test_pattern }}
-          COMPARISON_LABEL: Ubuntu 24.04 runner
-        run: bash ./scripts/run_ui_tests_shard.sh
+          EXTRA_TEST_ARGS: ${{ inputs.test_args }}
+          COMPARISON_LABEL: ${{ matrix.runner.label }}
+        run: bash .other-distros-tools/scripts/run_ui_tests_shard.sh
 
       - name: Upload comparison records
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: comparisons-ubuntu-${{ matrix.shard }}
+          name: comparisons-${{ matrix.runner.id }}-${{ matrix.shard }}
           path: |
             galata/environment.txt
             galata/test-results/report.json
@@ -285,11 +350,48 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: test-results-ubuntu-${{ matrix.shard }}
+          name: test-results-${{ matrix.runner.id }}-${{ matrix.shard }}
           path: |
             galata/test-results
             !galata/test-results/**/*.webm
             !galata/test-results/**/*.zip
+          if-no-files-found: ignore
+
+      # The check above uploads its results first, because Playwright empties
+      # test-results when it starts again.
+      - name: Update the changed references
+        if: ${{ !cancelled() && inputs.update_snapshots }}
+        env:
+          SHARD: ${{ matrix.shard }}
+          TEST_PATTERN: ${{ inputs.test_pattern }}
+          EXTRA_TEST_ARGS: ${{ inputs.test_args }} --update-snapshots=changed
+          COMPARISON_LABEL: ${{ matrix.runner.label }} (update)
+        run: |
+          bash .other-distros-tools/scripts/run_ui_tests_shard.sh || true
+          git status --porcelain -- galata/test
+          mkdir -p updated-references
+          git status --porcelain -- galata/test | awk '{print $2}' | while read -r file; do
+            mkdir -p "updated-references/$(dirname "${file}")"
+            cp "${file}" "updated-references/${file}"
+          done
+          find updated-references -type f
+
+      - name: Upload the update records
+        if: ${{ !cancelled() && inputs.update_snapshots }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: update-records-${{ matrix.runner.id }}-${{ matrix.shard }}
+          path: |
+            galata/test-results/report.json
+            galata/test-results/snapshot-comparisons.json
+          if-no-files-found: warn
+
+      - name: Upload the updated references
+        if: ${{ !cancelled() && inputs.update_snapshots }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: updated-references-${{ matrix.runner.id }}-${{ matrix.shard }}
+          path: updated-references
           if-no-files-found: ignore
 
       - name: Print JupyterLab logs
@@ -298,7 +400,7 @@ jobs:
 
   summary:
     name: Count the screenshot comparisons
-    needs: [distro, control]
+    needs: [distro, runner]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
