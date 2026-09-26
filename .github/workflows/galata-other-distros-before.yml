@@ -119,7 +119,7 @@ jobs:
         env:
           INSTALL_DEPS: ${{ matrix.runner.install_deps }}
         run: |
-          set -x
+          set -x -o pipefail
           cd galata
           # install-deps exits with 0 when it does not know the platform.
           if [[ "${INSTALL_DEPS}" == "true" ]]; then
