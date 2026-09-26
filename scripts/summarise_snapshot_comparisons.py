@@ -43,6 +43,15 @@ OTHER = "other error"
 MISMATCHES = (PIXELS, SIZE)
 
 FAILED_STATUSES = ("failed", "timedOut", "interrupted")
+
+# How one comparison fared across the attempts of its test.
+FIRST_TRY = "matched on the first attempt"
+FLAKY = "mismatched, then matched on the retry"
+HARD = "mismatched on every attempt"
+NOT_REACHED = "mismatched, then not reached on the retry"
+RETRY_ONLY_MATCH = "first reached on the retry, matched"
+RETRY_ONLY_MISMATCH = "first reached on the retry, mismatched"
+SPLIT_ORDER = [FIRST_TRY, FLAKY, HARD, NOT_REACHED, RETRY_ONLY_MATCH, RETRY_ONLY_MISMATCH]
 # U+203A, the separator Playwright uses between a describe block and a test.
 SEPARATOR = " \u203a "
 
@@ -201,6 +210,64 @@ def final_retry_by_test(outcomes: list[TestOutcome]) -> dict[tuple[str, str], in
     return {(outcome.label, outcome.test_id): outcome.attempts[-1]["retry"] for outcome in outcomes}
 
 
+def split_attempts(comparisons: list[Comparison], outcomes: list[TestOutcome]) -> dict:
+    """Follow each comparison through the attempts of its test.
+
+    A comparison is identified by its test, its line and its occurrence on
+    that line, so the same screenshot in the first attempt and in the retry
+    counts as one comparison.
+    """
+    attempts_of = {
+        (outcome.label, outcome.test_id): [attempt["retry"] for attempt in outcome.attempts]
+        for outcome in outcomes
+    }
+    by_key: dict[tuple, dict[int, Comparison]] = defaultdict(dict)
+    for comparison in comparisons:
+        key = (comparison.label, comparison.test_id, comparison.location, comparison.occurrence)
+        by_key[key][comparison.retry] = comparison
+
+    counts: dict[str, Counter] = defaultdict(Counter)
+    hard = []
+    for key, per_retry in by_key.items():
+        label, test_id = key[0], key[1]
+        retries = attempts_of.get((label, test_id)) or sorted(per_retry)
+        first = per_retry.get(retries[0])
+        later = [per_retry.get(retry) for retry in retries[1:]]
+        reached = [comparison for comparison in later if comparison is not None]
+        if first is not None and first.kind == MATCHED:
+            category = FIRST_TRY
+        elif first is not None:
+            if reached and reached[-1].kind == MATCHED:
+                category = FLAKY
+            elif len(reached) == len(later):
+                category = HARD
+            else:
+                category = NOT_REACHED
+        elif reached and reached[-1].kind == MATCHED:
+            category = RETRY_ONLY_MATCH
+        else:
+            category = RETRY_ONLY_MISMATCH
+        counts[label][category] += 1
+        if category == HARD:
+            runs = [first, *reached]
+            diffs = [(comparison.diff_pixels, comparison.size) for comparison in runs]
+            last = runs[-1]
+            hard.append(
+                {
+                    "label": label,
+                    "test": last.file + SEPARATOR + last.title,
+                    "reference": last.reference or last.snapshot,
+                    "kind": last.kind,
+                    "diff_pixels": [comparison.diff_pixels for comparison in runs],
+                    "same_diff": len(set(diffs)) == 1,
+                }
+            )
+    return {
+        "counts": {label: dict(counter) for label, counter in counts.items()},
+        "hard": hard,
+    }
+
+
 def summarise(  # noqa: C901
     comparisons: list[Comparison], outcomes: list[TestOutcome], control: str | None
 ) -> dict:
@@ -326,7 +393,12 @@ def summarise(  # noqa: C901
                     }
                 )
 
+    split = split_attempts(comparisons, outcomes)
+    split["hard"].sort(key=lambda row: (order[row["label"]], row["test"]))
+
     return {
+        "labels": labels,
+        "split": split,
         "platforms": platforms,
         "mismatches": mismatches,
         "earlier_attempt_mismatches": [asdict(comparison) for comparison in retried],
@@ -334,7 +406,7 @@ def summarise(  # noqa: C901
     }
 
 
-def render(summary: dict) -> str:  # noqa: C901
+def render(summary: dict) -> str:  # noqa: C901, PLR0912
     lines = ["## Screenshot comparisons against the committed Linux references", ""]
     lines += [
         "Counts use the last attempt of each test. A test stops at its first failing "
@@ -356,6 +428,41 @@ def render(summary: dict) -> str:  # noqa: C901
             f"{other_screenshot} | {len(platform['other_failures'])} |"
         )
     lines.append("")
+
+    split = summary["split"]
+    used = [
+        category
+        for category in SPLIT_ORDER
+        if any(split["counts"].get(label, {}).get(category) for label in summary["labels"])
+    ]
+    lines += ["### Comparisons across attempts", ""]
+    lines += [
+        "Each comparison is followed from the first attempt of its test to the retry.",
+        "",
+        "| Platform | Comparisons | " + " | ".join(used) + " |",
+        "| --- | ---: | " + " | ".join("---:" for _ in used) + " |",
+    ]
+    for label in summary["labels"]:
+        counts = split["counts"].get(label, {})
+        cells = " | ".join(str(counts.get(category, 0)) for category in used)
+        lines.append(f"| {label} | {sum(counts.values())} | {cells} |")
+    lines.append("")
+    if split["hard"]:
+        lines += ["### Comparisons that mismatched on every attempt", ""]
+        lines += [
+            "| Platform | Test | Reference | Result | Differing pixels per attempt | Same diff |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for row in split["hard"]:
+            pixels = " / ".join(
+                "" if value is None else f"{value:,}" for value in row["diff_pixels"]
+            )
+            same = "yes" if row["same_diff"] else "no"
+            lines.append(
+                f"| {row['label']} | {row['test']} | {row['reference']} | {row['kind']} | "
+                f"{pixels} | {same} |"
+            )
+        lines.append("")
 
     if summary["mismatches"]:
         lines += ["### Comparisons that did not match in the last attempt", ""]
