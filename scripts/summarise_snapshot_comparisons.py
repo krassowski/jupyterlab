@@ -32,6 +32,9 @@ from pathlib import Path
 PIXELS_RE = re.compile(r"(\d+) pixels \(ratio ([\d.]+) of all image pixels\) are different")
 SIZE_RE = re.compile(r"Expected an image (\d+)px by (\d+)px, received (\d+)px by (\d+)px")
 SNAPSHOT_RE = re.compile(r"^\s*Snapshot: (.+?)\s*$", re.MULTILINE)
+# A literal name in the line that makes the comparison, for comparisons that
+# matched and so carry no name in an error message.
+SOURCE_NAME_RE = re.compile(r"[\"'`]([^\"'`]+\.png)[\"'`]")
 MISSING_TEXT = "A snapshot doesn't exist"
 
 MATCHED = "matched"
@@ -164,6 +167,10 @@ def load(directory: Path) -> tuple[list[Comparison], list[TestOutcome]]:
                 [],
             )
             kind, details = classify(record, attempt_attachments)
+            if "snapshot" not in details:
+                name = SOURCE_NAME_RE.search(record.get("source") or "")
+                if name:
+                    details["snapshot"] = name.group(1)
             comparisons.append(
                 Comparison(
                     label=label,
@@ -210,7 +217,9 @@ def final_retry_by_test(outcomes: list[TestOutcome]) -> dict[tuple[str, str], in
     return {(outcome.label, outcome.test_id): outcome.attempts[-1]["retry"] for outcome in outcomes}
 
 
-def split_attempts(comparisons: list[Comparison], outcomes: list[TestOutcome]) -> dict:
+def split_attempts(  # noqa: C901, PLR0912
+    comparisons: list[Comparison], outcomes: list[TestOutcome]
+) -> dict:
     """Follow each comparison through the attempts of its test.
 
     A comparison is identified by its test, its line and its occurrence on
@@ -228,6 +237,10 @@ def split_attempts(comparisons: list[Comparison], outcomes: list[TestOutcome]) -
 
     counts: dict[str, Counter] = defaultdict(Counter)
     hard = []
+    # Comparisons that did not match on the first attempt somewhere, with what
+    # happened to them on every platform, to line the platforms up.
+    notable: dict[str, dict] = {}
+    categories: dict[tuple, str] = {}
     for key, per_retry in by_key.items():
         label, test_id = key[0], key[1]
         retries = attempts_of.get((label, test_id)) or sorted(per_retry)
@@ -248,6 +261,28 @@ def split_attempts(comparisons: list[Comparison], outcomes: list[TestOutcome]) -
         else:
             category = RETRY_ONLY_MISMATCH
         counts[label][category] += 1
+        runs = [comparison for comparison in [first, *reached] if comparison is not None]
+        last = runs[-1]
+        shared = SEPARATOR.join([last.file, last.title, last.location, str(last.occurrence)])
+        categories[(label, shared)] = category
+        if category != FIRST_TRY:
+            entry = notable.setdefault(
+                shared,
+                {
+                    "test": last.file + SEPARATOR + last.title,
+                    "reference": "",
+                    "platforms": {},
+                },
+            )
+            for comparison in runs:
+                entry["reference"] = (
+                    entry["reference"] or comparison.reference or comparison.snapshot
+                )
+            entry["platforms"][label] = {
+                "category": category,
+                "diff_pixels": [comparison.diff_pixels for comparison in runs],
+                "kinds": [comparison.kind for comparison in runs],
+            }
         if category == HARD:
             runs = [first, *reached]
             diffs = [(comparison.diff_pixels, comparison.size) for comparison in runs]
@@ -262,9 +297,15 @@ def split_attempts(comparisons: list[Comparison], outcomes: list[TestOutcome]) -
                     "same_diff": len(set(diffs)) == 1,
                 }
             )
+    # Fill in the platforms where the same comparison matched first time.
+    for shared, entry in notable.items():
+        for (label, key), category in categories.items():
+            if key == shared and label not in entry["platforms"]:
+                entry["platforms"][label] = {"category": category}
     return {
         "counts": {label: dict(counter) for label, counter in counts.items()},
         "hard": hard,
+        "notable": notable,
     }
 
 
