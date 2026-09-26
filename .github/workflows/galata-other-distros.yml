@@ -24,6 +24,11 @@ on:
         required: false
         default: true
         type: boolean
+      test_pattern:
+        description: Playwright test name pattern to match (passed to --grep)
+        required: false
+        default: ''
+        type: string
 
 permissions: {}
 
@@ -153,6 +158,7 @@ jobs:
       - name: Test
         env:
           SHARD: ${{ matrix.shard }}
+          TEST_PATTERN: ${{ inputs.test_pattern }}
           COMPARISON_LABEL: ${{ matrix.platform.label }}
         run: bash ./scripts/run_ui_tests_shard.sh
 
@@ -225,6 +231,7 @@ jobs:
       - name: Test
         env:
           SHARD: ${{ matrix.shard }}
+          TEST_PATTERN: ${{ inputs.test_pattern }}
           COMPARISON_LABEL: Ubuntu 24.04 runner
         run: bash ./scripts/run_ui_tests_shard.sh
 
