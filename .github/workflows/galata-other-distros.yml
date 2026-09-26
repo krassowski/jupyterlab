@@ -1,0 +1,236 @@
+name: UI Tests on other Linux distributions
+
+# Runs the Chromium `jupyterlab` project against the committed reference
+# screenshots, which the Ubuntu 24.04 runner records, with the userland of
+# another Linux distribution. The same tests run on the plain Ubuntu 24.04
+# runner as a control, so that flaky tests can be told apart from rendering
+# differences. Reference images are never updated here.
+
+on:
+  push:
+    branches:
+      - other-distros-ui-tests
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  SHARDS: 6
+
+jobs:
+  distro:
+    name: ${{ matrix.label }} (${{ matrix.shard }}/6)
+    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ${{ matrix.image }}
+      # Docker gives 64 MB of shared memory by default, which Chromium outgrows.
+      options: --shm-size=2g
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora]
+        shard: [1, 2, 3, 4, 5, 6]
+        include:
+          - distro: fedora
+            image: fedora:44
+            label: Fedora 44
+    steps:
+      - name: Install system packages (Fedora)
+        if: ${{ matrix.distro == 'fedora' }}
+        run: |
+          set -ex
+          cat /etc/os-release
+          cat /etc/dnf/dnf.conf || true
+          dnf install -y --allowerasing \
+            git curl which findutils procps-ng tar gzip xz unzip diffutils \
+            gcc gcc-c++ make \
+            python3.12 \
+            nodejs24 nodejs24-bin nodejs24-npm nodejs24-npm-bin \
+            nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon \
+            libXcomposite libXdamage libXfixes libXrandr mesa-libgbm \
+            pango cairo alsa-lib
+          # Make Python 3.12 the default interpreter with pip, as setup-python
+          # does on the runner, since the UI tests on main use Python 3.12.
+          python3.12 -m ensurepip --default-pip
+          ln -sf /usr/bin/python3.12 /usr/local/bin/python3
+          ln -sf /usr/bin/python3.12 /usr/local/bin/python
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Configure the container
+        run: |
+          set -ex
+          # The checkout belongs to the runner user and the steps run as root.
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          # Jupyter Server refuses to start as root without this.
+          mkdir -p ~/.jupyter
+          echo '{"ServerApp": {"allow_root": true}}' > ~/.jupyter/jupyter_server_config.json
+          command -v python pip node npm
+          python --version
+          node --version
+
+      - name: Install dependencies
+        run: bash ./scripts/ci_install.sh
+
+      - name: Install browser
+        run: |
+          set -ex
+          cd galata
+          jlpm playwright install chromium --only-shell
+
+      - name: Build galata
+        run: |
+          set -ex
+          cd galata
+          jlpm build
+
+      - name: Record fonts, libraries and browser
+        run: bash ./scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
+
+      - name: Test
+        env:
+          SHARD: ${{ matrix.shard }}
+          COMPARISON_LABEL: ${{ matrix.label }}
+        run: bash ./scripts/run_ui_tests_shard.sh
+
+      - name: Upload comparison records
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: comparisons-${{ matrix.distro }}-${{ matrix.shard }}
+          path: |
+            galata/environment.txt
+            galata/test-results/report.json
+            galata/test-results/snapshot-comparisons.json
+          if-no-files-found: warn
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-results-${{ matrix.distro }}-${{ matrix.shard }}
+          path: |
+            galata/test-results
+            !galata/test-results/**/*.webm
+            !galata/test-results/**/*.zip
+          if-no-files-found: ignore
+
+      - name: Print JupyterLab logs
+        if: ${{ always() }}
+        run: cat /tmp/jupyterlab_server.log || true
+
+  control:
+    name: Ubuntu 24.04 runner (${{ matrix.shard }}/6)
+    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Base Setup
+        uses: jupyterlab/maintainer-tools/.github/actions/base-setup@95d85449e4f3f352e261221f6529f8ed307f5728 # v1
+        with:
+          python_package_manager: 'uv pip'
+
+      - name: Install dependencies
+        run: bash ./scripts/ci_install.sh
+
+      - name: Install browser
+        run: |
+          set -ex
+          cd galata
+          jlpm playwright install chromium --only-shell
+
+      - name: Build galata
+        run: |
+          set -ex
+          cd galata
+          jlpm build
+
+      - name: Record fonts, libraries and browser
+        run: bash ./scripts/describe_rendering_environment.sh 2>&1 | tee galata/environment.txt
+
+      - name: Test
+        env:
+          SHARD: ${{ matrix.shard }}
+          COMPARISON_LABEL: Ubuntu 24.04 runner
+        run: bash ./scripts/run_ui_tests_shard.sh
+
+      - name: Upload comparison records
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: comparisons-ubuntu-${{ matrix.shard }}
+          path: |
+            galata/environment.txt
+            galata/test-results/report.json
+            galata/test-results/snapshot-comparisons.json
+          if-no-files-found: warn
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-results-ubuntu-${{ matrix.shard }}
+          path: |
+            galata/test-results
+            !galata/test-results/**/*.webm
+            !galata/test-results/**/*.zip
+          if-no-files-found: ignore
+
+      - name: Print JupyterLab logs
+        if: ${{ always() }}
+        run: cat /tmp/jupyterlab_server.log || true
+
+  summary:
+    name: Count the screenshot comparisons
+    needs: [distro, control]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Download comparison records
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: comparisons-*
+          path: comparisons
+
+      - name: Count
+        run: |
+          python3 scripts/summarise_snapshot_comparisons.py comparisons \
+            --control "Ubuntu 24.04 runner" \
+            --markdown comparisons/summary.md \
+            --json comparisons/summary.json
+
+      - name: Upload the counts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: summary
+          path: |
+            comparisons/summary.md
+            comparisons/summary.json
