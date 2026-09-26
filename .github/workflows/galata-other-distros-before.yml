@@ -39,8 +39,10 @@ on:
         type: string
       runners:
         description: >-
-          JSON list of GitHub-hosted runners, each with id, runs_on, label and
-          install_deps. Empty runs Ubuntu 22.04 and 26.04, [] runs none.
+          JSON list of GitHub-hosted runners, each with id, runs_on, label,
+          install_deps and optionally host_platform, which Playwright then uses
+          instead of the one it detects. Empty runs Ubuntu 22.04 and 26.04,
+          [] runs none.
         required: false
         default: ''
         type: string
@@ -70,6 +72,10 @@ jobs:
     runs-on: ${{ matrix.runner.runs_on }}
     permissions:
       contents: read
+    env:
+      # Playwright 1.58.0 refuses to install Chromium on Ubuntu 26.04, which it
+      # does not know. Its Chromium build is the same for every Linux platform.
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ${{ matrix.runner.host_platform || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -115,8 +121,10 @@ jobs:
         run: |
           set -x
           cd galata
+          # install-deps exits with 0 when it does not know the platform.
           if [[ "${INSTALL_DEPS}" == "true" ]]; then
-            if jlpm playwright install-deps; then
+            if jlpm playwright install-deps 2>&1 | tee install-deps.log \
+              && ! grep -q "Cannot install dependencies" install-deps.log; then
               echo "install-deps: ok" > install-deps.txt
             else
               echo "install-deps: failed" > install-deps.txt
@@ -124,6 +132,7 @@ jobs:
           else
             echo "install-deps: not run" > install-deps.txt
           fi
+          echo "host platform override: ${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-none}" >> install-deps.txt
           set -e
           # Install only the relevant browser for this matrix job
           jlpm playwright install chromium
