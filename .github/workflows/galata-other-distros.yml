@@ -15,8 +15,8 @@ on:
       platforms:
         description: >-
           JSON list of platforms to run, each with id, image, label and
-          optionally extra_packages and remove_packages. Empty runs the
-          default list.
+          optionally extra_packages, remove_packages and
+          unhint_small_dejavu. Empty runs the default list.
         required: false
         default: ''
         type: string
@@ -126,6 +126,31 @@ jobs:
           if [[ -n "${REMOVE_PACKAGES}" ]]; then
             rpm -e --nodeps ${REMOVE_PACKAGES}
           fi
+
+      # The DejaVu packages of Ubuntu and Fedora ship these rules, and the
+      # openSUSE package does not. They turn hinting off for DejaVu below
+      # 7.5 pixels, as in fontconfig/20-unhint-small-dejavu-*.conf of
+      # https://github.com/dejavu-fonts/dejavu-fonts.
+      - name: Add the DejaVu small size rules
+        if: ${{ matrix.platform.unhint_small_dejavu }}
+        run: |
+          set -ex
+          for family in 'DejaVu Sans' 'DejaVu Sans Mono' 'DejaVu Serif'; do
+            name="$(echo "${family}" | tr '[:upper:] ' '[:lower:]-')"
+            cat > "/etc/fonts/conf.d/20-unhint-small-${name}.conf" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE fontconfig SYSTEM "../fonts.dtd">
+          <fontconfig>
+            <match target="font">
+              <test name="family"><string>${family}</string></test>
+              <test compare="less" name="pixelsize"><double>7.5</double></test>
+              <edit name="hinting"><bool>false</bool></edit>
+            </match>
+          </fontconfig>
+          EOF
+          done
+          fc-cache -f
+          fc-conflist | grep unhint-small
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
