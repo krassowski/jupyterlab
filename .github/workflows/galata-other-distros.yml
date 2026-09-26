@@ -14,6 +14,8 @@ on:
   push:
     branches:
       - other-distros-ui-tests
+    paths:
+      - .github/workflows/galata-other-distros.yml
   workflow_dispatch:
     inputs:
       repository:

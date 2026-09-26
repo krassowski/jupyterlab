@@ -11,6 +11,13 @@ name: UI Tests before the visual testing work
 # of this branch in .other-distros-tools.
 
 on:
+  # GitHub only dispatches a workflow that has run once, so a change to this
+  # file runs the default measurement.
+  push:
+    branches:
+      - other-distros-ui-tests
+    paths:
+      - .github/workflows/galata-other-distros-before.yml
   workflow_dispatch:
     inputs:
       ref:
@@ -53,12 +60,12 @@ permissions: {}
 env:
   SHARDS: ${{ inputs.shards == '1' && '1' || '6' }}
   # pip 26.0 and later only consider files uploaded before this time.
-  PIP_UPLOADED_PRIOR_TO: ${{ inputs.cutoff }}
+  PIP_UPLOADED_PRIOR_TO: ${{ inputs.cutoff || '2026-02-04T09:27:23+00:00' }}
 
 jobs:
   runner:
     name: ${{ matrix.runner.label }} (${{ matrix.shard }}/${{ inputs.shards == '1' && '1' || '6' }})
-    if: ${{ inputs.runners != '[]' }}
+    if: ${{ (inputs.runners || '') != '[]' }}
     timeout-minutes: 150
     runs-on: ${{ matrix.runner.runs_on }}
     permissions:
@@ -73,7 +80,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: jupyterlab/jupyterlab
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || '131cf83388dabd4a4bfc5366a1b3fb455ae39309' }}
           persist-credentials: false
 
       - name: Checkout the measurement scripts
@@ -126,7 +133,7 @@ jobs:
         run: |
           {
             cat galata/install-deps.txt
-            pip list 2>/dev/null | grep -i -E '^(jupyterlab|jupyter[-_]server|ipykernel|ipython|notebook|nbconvert|jupyter[-_]client|tornado|pip) '
+            pip list 2>/dev/null | grep -i -E '^(jupyterlab|jupyter[-_]server|ipykernel|ipython|notebook|nbconvert|jupyter[-_]client|tornado|pip) ' || true
             bash .other-distros-tools/scripts/describe_rendering_environment.sh
           } 2>&1 | tee galata/environment.txt
 
@@ -165,7 +172,7 @@ jobs:
 
   distro:
     name: ${{ matrix.platform.label }} (${{ matrix.shard }}/${{ inputs.shards == '1' && '1' || '6' }})
-    if: ${{ inputs.platforms != '[]' }}
+    if: ${{ (inputs.platforms || '') != '[]' }}
     timeout-minutes: 150
     runs-on: ubuntu-24.04
     permissions:
@@ -209,7 +216,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: jupyterlab/jupyterlab
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || '131cf83388dabd4a4bfc5366a1b3fb455ae39309' }}
           persist-credentials: false
 
       - name: Checkout the measurement scripts
@@ -262,7 +269,7 @@ jobs:
         run: |
           {
             cat galata/install-deps.txt
-            pip list 2>/dev/null | grep -i -E '^(jupyterlab|jupyter[-_]server|ipykernel|ipython|notebook|nbconvert|jupyter[-_]client|tornado|pip) '
+            pip list 2>/dev/null | grep -i -E '^(jupyterlab|jupyter[-_]server|ipykernel|ipython|notebook|nbconvert|jupyter[-_]client|tornado|pip) ' || true
             bash .other-distros-tools/scripts/describe_rendering_environment.sh
           } 2>&1 | tee galata/environment.txt
 
