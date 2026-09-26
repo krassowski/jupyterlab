@@ -11,6 +11,19 @@ on:
     branches:
       - other-distros-ui-tests
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: >-
+          JSON list of platforms to run, each with id, image, label and
+          optionally extra_packages. Empty runs the default list.
+        required: false
+        default: ''
+        type: string
+      control:
+        description: Run the plain Ubuntu 24.04 runner as a control
+        required: false
+        default: true
+        type: boolean
 
 permissions: {}
 
@@ -19,13 +32,13 @@ env:
 
 jobs:
   distro:
-    name: ${{ matrix.label }} (${{ matrix.shard }}/6)
+    name: ${{ matrix.platform.label }} (${{ matrix.shard }}/6)
     timeout-minutes: 90
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     container:
-      image: ${{ matrix.image }}
+      image: ${{ matrix.platform.image }}
       # Docker gives 64 MB of shared memory by default, which Chromium outgrows.
       options: --shm-size=2g
     defaults:
@@ -34,18 +47,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [fedora, opensuse]
         shard: [1, 2, 3, 4, 5, 6]
-        include:
-          - distro: fedora
-            image: fedora:44
-            label: Fedora 44
-          - distro: opensuse
-            image: opensuse/tumbleweed:latest
-            label: openSUSE Tumbleweed
+        platform: ${{ fromJSON(inputs.platforms || '[{"id":"fedora","image":"fedora:44","label":"Fedora 44"},{"id":"opensuse","image":"opensuse/tumbleweed:latest","label":"openSUSE Tumbleweed"}]') }}
     steps:
       - name: Install system packages (Fedora)
-        if: ${{ matrix.distro == 'fedora' }}
+        if: ${{ startsWith(matrix.platform.image, 'fedora') }}
         run: |
           set -ex
           cat /etc/os-release
@@ -65,7 +71,7 @@ jobs:
           ln -sf /usr/bin/python3.12 /usr/local/bin/python
 
       - name: Install system packages (openSUSE)
-        if: ${{ matrix.distro == 'opensuse' }}
+        if: ${{ startsWith(matrix.platform.image, 'opensuse') }}
         run: |
           set -ex
           cat /etc/os-release
@@ -89,6 +95,22 @@ jobs:
           # scripts/ci_install.sh installs into the system interpreter.
           echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> "${GITHUB_ENV}"
           echo "UV_BREAK_SYSTEM_PACKAGES=1" >> "${GITHUB_ENV}"
+
+      # Only for runs that check a cause, such as a missing font. The default
+      # platforms install nothing beyond what the browser libraries pull in.
+      - name: Install extra packages
+        if: ${{ matrix.platform.extra_packages }}
+        env:
+          EXTRA_PACKAGES: ${{ matrix.platform.extra_packages }}
+        run: |
+          set -ex
+          # The list is split into words on purpose.
+          # shellcheck disable=SC2086
+          if command -v dnf > /dev/null; then
+            dnf install -y ${EXTRA_PACKAGES}
+          else
+            zypper --non-interactive install ${EXTRA_PACKAGES}
+          fi
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -131,14 +153,14 @@ jobs:
       - name: Test
         env:
           SHARD: ${{ matrix.shard }}
-          COMPARISON_LABEL: ${{ matrix.label }}
+          COMPARISON_LABEL: ${{ matrix.platform.label }}
         run: bash ./scripts/run_ui_tests_shard.sh
 
       - name: Upload comparison records
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: comparisons-${{ matrix.distro }}-${{ matrix.shard }}
+          name: comparisons-${{ matrix.platform.id }}-${{ matrix.shard }}
           path: |
             galata/environment.txt
             galata/test-results/report.json
@@ -149,7 +171,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: test-results-${{ matrix.distro }}-${{ matrix.shard }}
+          name: test-results-${{ matrix.platform.id }}-${{ matrix.shard }}
           path: |
             galata/test-results
             !galata/test-results/**/*.webm
@@ -162,6 +184,7 @@ jobs:
 
   control:
     name: Ubuntu 24.04 runner (${{ matrix.shard }}/6)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.control }}
     timeout-minutes: 90
     runs-on: ubuntu-24.04
     permissions:
