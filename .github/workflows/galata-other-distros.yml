@@ -15,7 +15,8 @@ on:
       platforms:
         description: >-
           JSON list of platforms to run, each with id, image, label and
-          optionally extra_packages. Empty runs the default list.
+          optionally extra_packages and remove_packages. Empty runs the
+          default list.
         required: false
         default: ''
         type: string
@@ -103,18 +104,27 @@ jobs:
 
       # Only for runs that check a cause, such as a missing font. The default
       # platforms install nothing beyond what the browser libraries pull in.
-      - name: Install extra packages
-        if: ${{ matrix.platform.extra_packages }}
+      # Removal skips the dependency check, so that fontconfig stays installed
+      # when the fonts it asks for are removed.
+      - name: Change packages for a check
+        if: ${{ matrix.platform.extra_packages || matrix.platform.remove_packages }}
         env:
           EXTRA_PACKAGES: ${{ matrix.platform.extra_packages }}
+          REMOVE_PACKAGES: ${{ matrix.platform.remove_packages }}
         run: |
           set -ex
-          # The list is split into words on purpose.
+          # The lists are split into words on purpose.
           # shellcheck disable=SC2086
-          if command -v dnf > /dev/null; then
-            dnf install -y ${EXTRA_PACKAGES}
-          else
-            zypper --non-interactive install ${EXTRA_PACKAGES}
+          if [[ -n "${EXTRA_PACKAGES}" ]]; then
+            if command -v dnf > /dev/null; then
+              dnf install -y ${EXTRA_PACKAGES}
+            else
+              zypper --non-interactive install ${EXTRA_PACKAGES}
+            fi
+          fi
+          # shellcheck disable=SC2086
+          if [[ -n "${REMOVE_PACKAGES}" ]]; then
+            rpm -e --nodeps ${REMOVE_PACKAGES}
           fi
 
       - name: Checkout
