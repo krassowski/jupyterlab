@@ -22,6 +22,9 @@
       "path": "../../packages/docmanager"
     },
     {
+      "path": "../../packages/mermaid"
+    },
+    {
       "path": "../../packages/nbformat"
     },
     {

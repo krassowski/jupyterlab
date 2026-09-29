@@ -129,6 +129,7 @@ const SKIP_CSS: Dict<string[]> = {
     '@jupyterlab/cells',
     '@jupyterlab/debugger',
     '@jupyterlab/docmanager',
+    '@jupyterlab/mermaid',
     '@jupyterlab/notebook',
     '@jupyterlab/terminal'
   ],

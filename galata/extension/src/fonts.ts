@@ -5,10 +5,17 @@ import type {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { IMermaidManager } from '@jupyterlab/mermaid';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import '@fontsource/dejavu-sans';
 import '@fontsource/dejavu-mono';
 import '@fontsource-variable/noto-sans-sc';
+
+/**
+ * Font families to embed in Mermaid diagrams: the UI font which Mermaid is
+ * configured with, see `--jp-ui-font-family` in the Galata default settings.
+ */
+const MERMAID_FONT_FAMILIES = ['DejaVu Sans'];
 
 const STYLE = `
 :root {
@@ -28,10 +35,11 @@ export const fontsPlugin: JupyterFrontEndPlugin<void> = {
   autoStart: true,
   description:
     'Adds version-pinned fonts for consistent playwright screenshots',
-  optional: [ITerminalTracker],
+  optional: [ITerminalTracker, IMermaidManager],
   activate: (
     app: JupyterFrontEnd,
-    terminalTracker: ITerminalTracker | null
+    terminalTracker: ITerminalTracker | null,
+    mermaidManager: IMermaidManager | null
   ): void => {
     void app.restored.then(() => {
       const style = document.createElement('style');
@@ -96,5 +104,92 @@ export const fontsPlugin: JupyterFrontEndPlugin<void> = {
         });
       });
     }
+
+    if (mermaidManager) {
+      embedFontsInMermaidDiagrams(mermaidManager);
+    }
   }
 };
+
+/**
+ * Embed the pinned fonts in each Mermaid diagram.
+ *
+ * JupyterLab shows a diagram as an SVG image, and an image cannot load the
+ * fonts of the page, so without the embedded fonts the diagram text would use
+ * the fonts of the operating system.
+ */
+function embedFontsInMermaidDiagrams(manager: IMermaidManager): void {
+  let style: Promise<string> | null = null;
+  const renderSvg = manager.renderSvg.bind(manager);
+  manager.renderSvg = async (text: string) => {
+    const info = await renderSvg(text);
+    if (!style) {
+      style = inlinedFontFaces(MERMAID_FONT_FAMILIES).then(
+        fontFaces => `<style>${fontFaces}</style>`
+      );
+    }
+    const css = await style;
+    info.svg = info.svg.replace(/<svg\b[^>]*>/, tag => tag + css);
+    return info;
+  };
+}
+
+/**
+ * Get the `@font-face` rules of the page for the given font families, with
+ * the font files inlined as data URLs.
+ */
+async function inlinedFontFaces(families: string[]): Promise<string> {
+  const rules: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let cssRules: CSSRuleList;
+    try {
+      cssRules = sheet.cssRules;
+    } catch {
+      // The rules of a stylesheet from another origin cannot be read
+      continue;
+    }
+    for (const rule of Array.from(cssRules)) {
+      if (!(rule instanceof CSSFontFaceRule)) {
+        continue;
+      }
+      const family = rule.style
+        .getPropertyValue('font-family')
+        .replace(/["']/g, '')
+        .trim();
+      const url = /url\(["']?([^"')]+\.woff2)["']?\)/.exec(
+        rule.style.getPropertyValue('src')
+      )?.[1];
+      if (!families.includes(family) || !url) {
+        continue;
+      }
+      const response = await fetch(
+        new URL(url, sheet.href ?? document.baseURI)
+      );
+      const data = await readAsDataURL(await response.blob());
+      const style = rule.style.getPropertyValue('font-style') || 'normal';
+      const weight = rule.style.getPropertyValue('font-weight') || 'normal';
+      rules.push(
+        `@font-face { font-family: '${family}'; font-style: ${style}; ` +
+          `font-weight: ${weight}; src: url(${data}) format('woff2'); }`
+      );
+    }
+  }
+  return rules.join('\n');
+}
+
+/**
+ * Read a font file as a data URL.
+ */
+function readAsDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // The server may not send a font MIME type, so set it explicitly
+      resolve(
+        (reader.result as string).replace(/^data:[^;]*;/, 'data:font/woff2;')
+      );
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
