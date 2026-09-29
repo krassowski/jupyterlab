@@ -3712,6 +3712,7 @@ __metadata:
     "@jupyterlab/cells": ^4.7.0-alpha.2
     "@jupyterlab/debugger": ^4.7.0-alpha.2
     "@jupyterlab/docmanager": ^4.7.0-alpha.2
+    "@jupyterlab/mermaid": ^4.7.0-alpha.2
     "@jupyterlab/nbformat": ^4.7.0-alpha.2
     "@jupyterlab/notebook": ^4.7.0-alpha.2
     "@jupyterlab/settingregistry": ^4.7.0-alpha.2
