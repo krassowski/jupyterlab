@@ -42,8 +42,9 @@ New-Item -Path $Env:USERPROFILE\.jupyter -ItemType "directory" -Force | Out-Null
 
 Invoke-Timed "pip install uv" { pip install -q --upgrade pip uv }
 
-# jupyter-builder provides jlpm; the hatch build hook gets it from the build requirements.
-Invoke-Timed "uv install jlpm" { uv pip install --system "jupyter-builder>=1.1.1" }
+# The build requirements: jupyter-builder provides jlpm, and `jlpm integrity`
+# calls `hatchling version`. The hatch build hook has both in its build environment.
+Invoke-Timed "uv install build reqs" { uv pip install --system "hatchling>=1.21.1" "jupyter-builder>=1.1.1" }
 
 # The editable build hook runs `jlpm install` then `jlpm run build`,
 # and `build` is `integrity && build:all && cd dev_mode && build`.
