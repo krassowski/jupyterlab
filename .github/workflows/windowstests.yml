@@ -13,13 +13,11 @@ permissions:
 
 jobs:
   windowstests:
-    # EXPERIMENT: control against proposal, for both groups
-    name: Windows (${{ matrix.group }}, ${{ matrix.variant }})
+    name: Windows
     strategy:
       matrix:
         python-version: ["3.14"]
         group: [integrity, python]
-        variant: [control, proposal]
         include:
           - group: integrity
             optional_dependencies: dev
@@ -34,10 +32,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # On hosted Windows runners, file operations on C: are several times
-      # slower than on D:, which holds the workspace and RUNNER_TEMP.
+      # File operations on C: are several times slower than on D:, which holds
+      # the workspace and RUNNER_TEMP. The build tests create app directories
+      # in TEMP, and installs read from the yarn and uv caches.
       - name: Move temporary files and package caches to the D drive
-        if: matrix.variant == 'proposal'
         shell: pwsh
         run: |
           $tmp = Join-Path $Env:RUNNER_TEMP "tmp"
@@ -49,7 +47,7 @@ jobs:
           # which is the global cache only when this is set before base-setup runs
           "YARN_ENABLE_GLOBAL_CACHE=1" >> $Env:GITHUB_ENV
           "UV_CACHE_DIR=$(Join-Path $Env:RUNNER_TEMP uv-cache)" >> $Env:GITHUB_ENV
-          # the uv cache and the Python install are on different drives
+          # uv cannot hardlink from D: into the Python install on C:
           "UV_LINK_MODE=copy" >> $Env:GITHUB_ENV
 
       - name: Base Setup
