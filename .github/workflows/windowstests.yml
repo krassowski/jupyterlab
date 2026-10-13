@@ -13,32 +13,78 @@ permissions:
 
 jobs:
   windowstests:
-    name: Windows
+    # EXPERIMENT: timing variants of the python group, see scripts/ci_windows_timing.ps1
+    name: Windows (${{ matrix.variant }})
     strategy:
       matrix:
         python-version: ["3.14"]
-        group: [integrity, python]
-        include:
-          - group: integrity
-            optional_dependencies: dev
-          - group: python
-            optional_dependencies: test
+        group: [python]
+        optional_dependencies: [test]
+        variant:
+          # current scripts, unchanged
+          - control
+          # same work as control, split into timed phases
+          - timed
+          # timed, with TEMP, TMP and the yarn global folder on D:
+          - ddrive
+          # ddrive, with the yarn cache saved and restored by base-setup
+          - ddrive-yarncache
+          # ddrive, with setup-python and setup-node called directly (no uv cache, no post steps)
+          - ddrive-nobasesetup
       fail-fast: false
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
 
+      - name: Use D drive for temporary files and the yarn cache
+        if: startsWith(matrix.variant, 'ddrive')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path D:\tmp, D:\yarn-berry | Out-Null
+          "TEMP=D:\tmp" >> $Env:GITHUB_ENV
+          "TMP=D:\tmp" >> $Env:GITHUB_ENV
+          "YARN_GLOBAL_FOLDER=D:\yarn-berry" >> $Env:GITHUB_ENV
+
+      - name: Let base-setup cache the yarn global cache
+        if: matrix.variant == 'ddrive-yarncache'
+        shell: pwsh
+        run: |
+          "YARN_ENABLE_GLOBAL_CACHE=1" >> $Env:GITHUB_ENV
+
       - name: Base Setup
+        if: matrix.variant != 'ddrive-nobasesetup'
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@95d85449e4f3f352e261221f6529f8ed307f5728 # v1
         with:
           python_package_manager: "uv pip"
           python_cache_key_suffix: ${{ matrix.optional_dependencies }}
 
+      - name: Install Python
+        if: matrix.variant == 'ddrive-nobasesetup'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install node
+        if: matrix.variant == 'ddrive-nobasesetup'
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+
+      - name: Enable long paths and corepack
+        if: matrix.variant == 'ddrive-nobasesetup'
+        run: |
+          Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 1
+          corepack enable
+        shell: pwsh
+
       - name: Install dependencies
+        if: matrix.variant == 'control'
         env:
           GROUP: ${{ matrix.group }}
           OPTIONAL_DEPENDENCIES: ${{ matrix.optional_dependencies }}
@@ -46,7 +92,15 @@ jobs:
         shell: pwsh
 
       - name: Run test ${{ matrix.group }}
+        if: matrix.variant == 'control'
         env:
           GROUP: ${{ matrix.group }}
         run: .\scripts\ci_script
+        shell: pwsh
+
+      - name: Timed install and test
+        if: matrix.variant != 'control'
+        env:
+          GROUP: ${{ matrix.group }}
+        run: .\scripts\ci_windows_timing.ps1
         shell: pwsh
