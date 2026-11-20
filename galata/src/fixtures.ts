@@ -408,6 +408,15 @@ export const test: TestType<
     use
   ) => {
     try {
+      // Lumino reads `navigator.platform` to choose between `Ctrl+C` and `⌃C`
+      // in menus, so a macOS run renders different text, not different pixels.
+      // Setting this makes such a run comparable with the Linux references.
+      const spoofedPlatform = process.env.GALATA_SPOOF_PLATFORM;
+      if (spoofedPlatform) {
+        await page.addInitScript(value => {
+          Object.defineProperty(navigator, 'platform', { get: () => value });
+        }, spoofedPlatform);
+      }
       await use(
         await galata.initTestPage(
           appPath,

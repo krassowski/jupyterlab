@@ -73,7 +73,12 @@
   height: var(--jp-private-completer-item-height);
   font-family: var(--jp-code-font-family);
   font-size: var(--jp-code-font-size);
-  line-height: var(--jp-private-completer-item-height);
+
+  /* The line box must have the same parity as the font's ascent plus descent,
+     or the half-leading falls on a half pixel and platforms round it in
+     opposite directions, moving the label by one pixel. At 13px the bundled
+     DejaVu faces give 15px, so the line box has to be odd. */
+  line-height: calc(var(--jp-private-completer-item-height) - 1px);
   white-space: nowrap;
 }
 

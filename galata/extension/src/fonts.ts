@@ -16,8 +16,11 @@ const STYLE = `
   --jp-code-font-family-default: 'DejaVu Mono' !important;
   /* Ensure we have kerning enabled */
   font-kerning: normal;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: none;
+  /* Blink ignores these on Linux, so they only take effect on macOS, where
+     they ask for greyscale antialiasing, which is what --disable-lcd-text
+     gives on the machines that record the references. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   /* Do not let the browser modify the sizing based on the screen size */
   font-optical-sizing: none;
 }

@@ -158,7 +158,12 @@
   min-height: var(--jp-private-menu-item-height);
   max-height: var(--jp-private-menu-item-height);
   padding: 0;
-  line-height: var(--jp-private-menu-item-height);
+
+  /* The line box must have the same parity as the font's ascent plus descent,
+     or the half-leading falls on a half pixel and platforms round it in
+     opposite directions, moving the label by one pixel. At 13px the bundled
+     DejaVu faces give 15px, so the line box has to be odd. */
+  line-height: calc(var(--jp-private-menu-item-height) - 1px);
 }
 
 .lm-Menu-item.lm-mod-active {

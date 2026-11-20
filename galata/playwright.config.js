@@ -3,17 +3,43 @@
 
 var baseConfig = require('@jupyterlab/galata/lib/playwright-config');
 
+// Reference screenshots are recorded on Linux and carry a `-linux` suffix.
+// Setting GALATA_REFERENCE_PLATFORM makes a run on any machine compare against
+// that platform's references instead of its own, which is how the Linux
+// references are checked on macOS and Windows.
+var referencePlatform = process.env.GALATA_REFERENCE_PLATFORM;
+
 var chromiumArgs = [
   // Ensures that subpixel font rendering in Chrome is the same on CI as locally
   '--disable-lcd-text',
   // The terminal renders with WebGL when available and with the DOM renderer
   // otherwise, each rasterizing text slightly differently. WebGL availability
   // varies between CI runners, so disable it to keep screenshots deterministic.
-  '--disable-webgl'
+  '--disable-webgl',
+  // Each of these pins something a non-Linux machine may otherwise pick for
+  // itself: the display colour profile, the CPU-specific Skia code path, the
+  // device pixel ratio, and the two accelerated raster paths that macOS and
+  // Windows can back with Metal or Direct3D.
+  '--force-color-profile=srgb',
+  '--disable-skia-runtime-opts',
+  '--force-device-scale-factor=1',
+  '--disable-gpu',
+  '--disable-accelerated-2d-canvas',
+  // Linux is the only platform that hints, which makes it measure text wider
+  // than macOS and Windows do. These two produce output byte for byte
+  // identical to `text-rendering: geometricPrecision`, and they live here
+  // rather than in the shared config or the galata extension because they
+  // require the reference screenshots to be regenerated.
+  '--font-render-hinting=none',
+  '--disable-font-subpixel-positioning'
 ];
 
 module.exports = {
   ...baseConfig,
+  snapshotPathTemplate:
+    '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}-' +
+    (referencePlatform || '{platform}') +
+    '{ext}',
   reporter: process.env.CI
     ? [['blob'], ['json', { outputFile: 'test-results/report.json' }]]
     : [['list'], ['html', { open: 'on-failure' }]],
